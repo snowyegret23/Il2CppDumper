@@ -42,6 +42,15 @@ Create the output directory before running the command. Optional flags can appea
 * `--strings-only`: write only `stringliteral.json`, skipping `dump.cs`, `script.json`, headers and DummyDll generation. Existing unrelated output files are left untouched. Binary/metadata initialization is still required; the file contains discovered string references and their RVAs, not every localization asset or unused metadata string. Addressed string extraction is unavailable for v16.
 * `--restore-explicit-interfaces`: add unambiguous explicit interface mappings to DummyDll. This conservative, opt-in reconstruction requires a directly implemented non-generic interface and matching method name, flags and scoped signature. Generic methods/interfaces, inherited-only interfaces and ambiguous matches are left unchanged.
 
+### Automated releases
+
+Pushing to `master` publishes a GitHub Release tagged with the triggering commit's first 12 hexadecimal characters. The full commit SHA is recorded in the release notes. Each Windows x64 ZIP includes configuration, analysis scripts and documentation:
+
+* `net8.0-win-x64-self-contained` (recommended): includes the .NET runtime. Extract the whole ZIP and run `Il2CppDumper.exe`; no separate .NET installation is needed.
+* `net6.0-win-x64-framework-dependent` / `net8.0-win-x64-framework-dependent`: smaller downloads requiring the matching .NET runtime.
+
+The `Release commit` workflow can also be started manually on `master`. All three packages must build and pass a CLI smoke test before release creation. Uploads finish while the release is a draft; reruns can resume a draft but leave an already published release unchanged. The workflow uses the repository's built-in `GITHUB_TOKEN` with `contents: write`, without requiring a separate secret.
+
 ### Outputs
 
 #### DummyDll
