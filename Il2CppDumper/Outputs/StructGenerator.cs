@@ -265,77 +265,48 @@ namespace Il2CppDumper
             // 处理MetadataUsage
             if (il2Cpp.Version >= 27)
             {
-                var sectionHelper = executor.GetSectionHelper();
-                foreach (var sec in sectionHelper.Data)
+                foreach (var (usage, decodedIndex, va) in ReadMetadataUsages())
                 {
-                    il2Cpp.Position = sec.offset;
-                    var end = Math.Min(sec.offsetEnd, il2Cpp.Length) - il2Cpp.PointerSize;
-                    while (il2Cpp.Position < end)
+                    switch ((Il2CppMetadataUsage)usage)
                     {
-                        var addr = il2Cpp.Position;
-                        var metadataValue = il2Cpp.ReadUIntPtr();
-                        var position = il2Cpp.Position;
-                        if (metadataValue < uint.MaxValue)
-                        {
-                            var encodedToken = (uint)metadataValue;
-                            var usage = il2Cpp.GetMetadataUsageType(encodedToken);
-                            if (usage > 0 && usage <= 6)
+                        case Il2CppMetadataUsage.kIl2CppMetadataUsageInvalid:
+                            break;
+                        case Il2CppMetadataUsage.kIl2CppMetadataUsageTypeInfo:
+                            if (decodedIndex < il2Cpp.types.Length)
                             {
-                                var decodedIndex = metadata.GetDecodedMethodIndex(encodedToken);
-                                if (metadataValue == ((usage << 29) | (decodedIndex << 1)) + 1)
-                                {
-                                    var va = il2Cpp.MapRTVA(addr);
-                                    if (va > 0)
-                                    {
-                                        switch ((Il2CppMetadataUsage)usage)
-                                        {
-                                            case Il2CppMetadataUsage.kIl2CppMetadataUsageInvalid:
-                                                break;
-                                            case Il2CppMetadataUsage.kIl2CppMetadataUsageTypeInfo:
-                                                if (decodedIndex < il2Cpp.types.Length)
-                                                {
-                                                    AddMetadataUsageTypeInfo(json, decodedIndex, va);
-                                                }
-                                                break;
-                                            case Il2CppMetadataUsage.kIl2CppMetadataUsageIl2CppType:
-                                                if (decodedIndex < il2Cpp.types.Length)
-                                                {
-                                                    AddMetadataUsageIl2CppType(json, decodedIndex, va);
-                                                }
-                                                break;
-                                            case Il2CppMetadataUsage.kIl2CppMetadataUsageMethodDef:
-                                                if (decodedIndex < metadata.methodDefs.Length)
-                                                {
-                                                    AddMetadataUsageMethodDef(json, decodedIndex, va);
-                                                }
-                                                break;
-                                            case Il2CppMetadataUsage.kIl2CppMetadataUsageFieldInfo:
-                                                if (decodedIndex < metadata.fieldRefs.Length)
-                                                {
-                                                    AddMetadataUsageFieldInfo(json, decodedIndex, va);
-                                                }
-                                                break;
-                                            case Il2CppMetadataUsage.kIl2CppMetadataUsageStringLiteral:
-                                                if (decodedIndex < metadata.stringLiterals.Length)
-                                                {
-                                                    AddMetadataUsageStringLiteral(json, decodedIndex, va);
-                                                }
-                                                break;
-                                            case Il2CppMetadataUsage.kIl2CppMetadataUsageMethodRef:
-                                                if (decodedIndex < il2Cpp.methodSpecs.Length)
-                                                {
-                                                    AddMetadataUsageMethodRef(json, decodedIndex, va);
-                                                }
-                                                break;
-                                        }
-                                        if (il2Cpp.Position != position)
-                                        {
-                                            il2Cpp.Position = position;
-                                        }
-                                    }
-                                }
+                                AddMetadataUsageTypeInfo(json, decodedIndex, va);
                             }
-                        }
+                            break;
+                        case Il2CppMetadataUsage.kIl2CppMetadataUsageIl2CppType:
+                            if (decodedIndex < il2Cpp.types.Length)
+                            {
+                                AddMetadataUsageIl2CppType(json, decodedIndex, va);
+                            }
+                            break;
+                        case Il2CppMetadataUsage.kIl2CppMetadataUsageMethodDef:
+                            if (decodedIndex < metadata.methodDefs.Length)
+                            {
+                                AddMetadataUsageMethodDef(json, decodedIndex, va);
+                            }
+                            break;
+                        case Il2CppMetadataUsage.kIl2CppMetadataUsageFieldInfo:
+                            if (decodedIndex < metadata.fieldRefs.Length)
+                            {
+                                AddMetadataUsageFieldInfo(json, decodedIndex, va);
+                            }
+                            break;
+                        case Il2CppMetadataUsage.kIl2CppMetadataUsageStringLiteral:
+                            if (decodedIndex < metadata.stringLiterals.Length)
+                            {
+                                AddMetadataUsageStringLiteral(json, decodedIndex, va);
+                            }
+                            break;
+                        case Il2CppMetadataUsage.kIl2CppMetadataUsageMethodRef:
+                            if (decodedIndex < il2Cpp.methodSpecs.Length)
+                            {
+                                AddMetadataUsageMethodRef(json, decodedIndex, va);
+                            }
+                            break;
                     }
                 }
             }
@@ -367,13 +338,8 @@ namespace Il2CppDumper
                 }
             }
             //输出单独的StringLiteral
-            var stringLiterals = json.ScriptString.Select(x => new
-            {
-                value = x.Value,
-                address = $"0x{x.Address:X}"
-            }).ToArray();
+            WriteStringLiteralsFile(json.ScriptString, outputDir);
             var jsonOptions = new JsonSerializerOptions() { WriteIndented = true, IncludeFields = true };
-            File.WriteAllText(outputDir + "stringliteral.json", JsonSerializer.Serialize(stringLiterals, jsonOptions), new UTF8Encoding(false));
             //写入文件
             File.WriteAllText(outputDir + "script.json", JsonSerializer.Serialize(json, jsonOptions));
             //il2cpp.h
@@ -430,6 +396,79 @@ namespace Il2CppDumper
             sb.Append(methodInfoHeader);
             File.WriteAllText(outputDir + "il2cpp.h", sb.ToString());
         }
+
+        private IEnumerable<(uint Usage, uint Index, ulong Address)> ReadMetadataUsages()
+        {
+            var sectionHelper = executor.GetSectionHelper();
+            foreach (var sec in sectionHelper.Data)
+            {
+                il2Cpp.Position = sec.offset;
+                var end = Math.Min(sec.offsetEnd, il2Cpp.Length);
+                while (il2Cpp.Position <= end && end - il2Cpp.Position >= il2Cpp.PointerSize)
+                {
+                    var addr = il2Cpp.Position;
+                    var metadataValue = il2Cpp.ReadUIntPtr();
+                    var position = il2Cpp.Position;
+                    if (metadataValue >= uint.MaxValue)
+                        continue;
+                    var encodedToken = (uint)metadataValue;
+                    var rawUsage = Metadata.GetEncodedIndexType(encodedToken);
+                    var usage = il2Cpp.GetMetadataUsageType(encodedToken);
+                    var decodedIndex = metadata.GetDecodedMethodIndex(encodedToken);
+                    if (usage == 0 || usage > 6 ||
+                        metadataValue != ((rawUsage << 29) | (decodedIndex << 1)) + 1)
+                        continue;
+                    var va = il2Cpp.MapRTVA(addr);
+                    if (va > 0)
+                    {
+                        try
+                        {
+                            yield return (usage, decodedIndex, va);
+                        }
+                        finally
+                        {
+                            il2Cpp.Position = position;
+                        }
+                    }
+                }
+            }
+        }
+
+        public void WriteStringLiterals(string outputDir)
+        {
+            var json = new ScriptJson();
+            if (il2Cpp.Version >= 27)
+            {
+                foreach (var (usage, index, address) in ReadMetadataUsages())
+                {
+                    if (usage == (uint)Il2CppMetadataUsage.kIl2CppMetadataUsageStringLiteral &&
+                        index < metadata.stringLiterals.Length)
+                        AddMetadataUsageStringLiteral(json, index, address);
+                }
+            }
+            else if (il2Cpp.Version > 16)
+            {
+                foreach (var item in metadata.metadataUsageDic[Il2CppMetadataUsage.kIl2CppMetadataUsageStringLiteral])
+                    AddMetadataUsageStringLiteral(json, item.Value, il2Cpp.metadataUsages[item.Key]);
+            }
+            else
+            {
+                Console.WriteLine("WARNING: Addressed string literal extraction is unavailable for metadata v16.");
+            }
+            WriteStringLiteralsFile(json.ScriptString, outputDir);
+        }
+
+        private static void WriteStringLiteralsFile(IEnumerable<ScriptString> strings, string outputDir)
+        {
+            var stringLiterals = strings.Select(x => new
+            {
+                value = x.Value,
+                address = $"0x{x.Address:X}"
+            }).ToArray();
+            var jsonOptions = new JsonSerializerOptions() { WriteIndented = true, IncludeFields = true };
+            File.WriteAllText(Path.Combine(outputDir, "stringliteral.json"), JsonSerializer.Serialize(stringLiterals, jsonOptions), new UTF8Encoding(false));
+        }
+
 
         private void AddMetadataUsageTypeInfo(ScriptJson json, uint index, ulong address)
         {

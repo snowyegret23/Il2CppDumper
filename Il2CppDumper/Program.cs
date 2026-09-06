@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -18,6 +19,31 @@ namespace Il2CppDumper
             string metadataPath = null;
             string outputDir = null;
 
+            var positionalArgs = new List<string>();
+            foreach (var arg in args)
+            {
+                switch (arg)
+                {
+                    case "--strings-only":
+                        config.StringsOnly = true;
+                        break;
+                    case "--restore-explicit-interfaces":
+                        config.RestoreExplicitInterfaces = true;
+                        break;
+                    default:
+                        if (arg.StartsWith("--") && arg != "--help")
+                        {
+                            Console.WriteLine($"ERROR: Unknown option: {arg}");
+                            Environment.ExitCode = 1;
+                            ShowHelp();
+                            return;
+                        }
+                        positionalArgs.Add(arg);
+                        break;
+                }
+            }
+            args = positionalArgs.ToArray();
+
             if (args.Length == 1)
             {
                 if (args[0] == "-h" || args[0] == "--help" || args[0] == "/?" || args[0] == "/h")
@@ -28,6 +54,7 @@ namespace Il2CppDumper
             }
             if (args.Length > 3)
             {
+                Environment.ExitCode = 1;
                 ShowHelp();
                 return;
             }
@@ -120,6 +147,8 @@ namespace Il2CppDumper
         static void ShowHelp()
         {
             Console.WriteLine($"usage: {AppDomain.CurrentDomain.FriendlyName} <executable-file> <global-metadata> <output-directory>");
+            Console.WriteLine("  --strings-only                 Write only stringliteral.json (overrides other output settings)");
+            Console.WriteLine("  --restore-explicit-interfaces  Restore unambiguous non-generic explicit interface mappings in DummyDll");
         }
 
         private static bool Init(string il2cppPath, string metadataPath, out Metadata metadata, out Il2Cpp il2Cpp)
@@ -261,6 +290,13 @@ namespace Il2CppDumper
         {
             Console.WriteLine("Dumping...");
             var executor = new Il2CppExecutor(metadata, il2Cpp);
+            if (config.StringsOnly)
+            {
+                Console.WriteLine("Generate string literals only...");
+                new StructGenerator(executor).WriteStringLiterals(outputDir);
+                Console.WriteLine("Done!");
+                return;
+            }
             var decompiler = new Il2CppDecompiler(executor);
             decompiler.Decompile(config, outputDir);
             Console.WriteLine("Done!");
@@ -274,7 +310,7 @@ namespace Il2CppDumper
             if (config.GenerateDummyDll)
             {
                 Console.WriteLine("Generate dummy dll...");
-                DummyAssemblyExporter.Export(executor, outputDir, config.DummyDllAddToken);
+                DummyAssemblyExporter.Export(executor, outputDir, config.DummyDllAddToken, config.RestoreExplicitInterfaces);
                 Console.WriteLine("Done!");
             }
         }

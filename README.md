@@ -37,6 +37,11 @@ The program will then generate all the output files in current working directory
 Il2CppDumper.exe <executable-file> <global-metadata> <output-directory>
 ```
 
+Create the output directory before running the command. Optional flags can appear before or after the paths:
+
+* `--strings-only`: write only `stringliteral.json`, skipping `dump.cs`, `script.json`, headers and DummyDll generation. Existing unrelated output files are left untouched. Binary/metadata initialization is still required; the file contains discovered string references and their RVAs, not every localization asset or unused metadata string. Addressed string extraction is unavailable for v16.
+* `--restore-explicit-interfaces`: add unambiguous explicit interface mappings to DummyDll. This conservative, opt-in reconstruction requires a directly implemented non-generic interface and matching method name, flags and scoped signature. Generic methods/interfaces, inherited-only interfaces and ambiguous matches are left unchanged.
+
 ### Outputs
 
 #### DummyDll
@@ -55,6 +60,8 @@ For IDA
 
 For IDA, read il2cpp.h file and apply structure information in IDA
 
+Use `ida_py3.py` or `ida_with_struct_py3.py` with Python 3. The latter uses the [IDA 9 type APIs](https://python.docs.hex-rays.com/9.0/df/d81/namespaceida__typeinf.html); both use explicit module imports and handle cancelled file selection/imports. They add analysis annotations without patching binary bytes or creating synthetic string segments. The legacy Python 2 scripts remain unchanged.
+
 #### il2cpp.h
 
 structure information header file
@@ -62,6 +69,8 @@ structure information header file
 #### ghidra.py
 
 For Ghidra
+
+`ghidra.py` and `ghidra_with_struct.py` accept Unicode text under Jython or Python 3/PyGhidra. The structured script requires importing a compatible header first (`il2cpp_header_to_ghidra.py` is a Python 3 converter). For the Script Manager's PyGhidra provider, add `#@runtime PyGhidra` to your local script copy and launch Ghidra in [PyGhidra mode](https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Features/PyGhidra/src/main/py/README.md). Runtime selection is not changed automatically for existing Jython users. The WASM/plugin-specific script is unchanged.
 
 #### Il2CppBinaryNinja
 
@@ -88,8 +97,14 @@ Available options:
 * `DumpMethod`, `DumpField`, `DumpProperty`, `DumpAttribute`, `DumpFieldOffset`, `DumpMethodOffset`, `DumpTypeDefIndex`
   * Whether to output these information to dump.cs
 
-* `GenerateDummyDll`, `GenerateScript`
+* `GenerateDummyDll`, `GenerateStruct`
   * Whether to generate these things
+
+* `StringsOnly` (default `false`)
+  * Equivalent to `--strings-only`; takes priority over the other output settings.
+
+* `RestoreExplicitInterfaces` (default `false`)
+  * Equivalent to `--restore-explicit-interfaces`; only affects DummyDll generation.
 
 * `DummyDllAddToken`
   * Whether to add token in DummyDll
@@ -131,3 +146,6 @@ If you have a rooted Android phone, you can try my other project [Zygisk-Il2CppD
 - Jumboperson - [Il2CppDumper](https://github.com/Jumboperson/Il2CppDumper)
 - [c01ns](https://github.com/c01ns/Il2CppDumper), [vmpprotect](https://github.com/vmpprotect/Il2CppDumper) and [Cpp2IL](https://github.com/SamboyCoding/Cpp2IL) - modern metadata layout references
 - [Il2CppInspectorRedux](https://github.com/LukeFZ/Il2CppInspectorRedux) - metadata version/layout cross-checks; not a runtime dependency
+- [jules-noelaudoux](https://github.com/jules-noelaudoux/Il2CppDumper) and [MSerperior](https://github.com/MSerperior/Il2CppDumper) - IDA/Python 3 compatibility references
+- [liu-shuoye](https://github.com/liu-shuoye/Il2CppDumper) - explicit interface reconstruction approach
+- [b1naryTR](https://github.com/b1naryTR/Il2CppDumper) - lightweight string extraction approach

@@ -25,6 +25,11 @@ namespace Il2CppDumper
         private readonly Dictionary<int, MethodDefinition> methodDefinitionDic = new();
 
         public DummyAssemblyGenerator(Il2CppExecutor il2CppExecutor, bool addToken)
+            : this(il2CppExecutor, addToken, false)
+        {
+        }
+
+        public DummyAssemblyGenerator(Il2CppExecutor il2CppExecutor, bool addToken, bool restoreExplicitInterfaces)
         {
             executor = il2CppExecutor;
             metadata = il2CppExecutor.metadata;
@@ -446,6 +451,80 @@ namespace Il2CppDumper
                     }
                 }
             }
+            if (restoreExplicitInterfaces)
+            {
+                foreach (var type in typeDefinitionDic.Values)
+                    RestoreExplicitInterfaceImplementations(type);
+            }
+        }
+
+        private static void RestoreExplicitInterfaceImplementations(TypeDefinition type)
+        {
+            foreach (var method in type.Methods)
+            {
+                var separator = method.Name.LastIndexOf('.');
+                if (separator <= 0 || !method.IsPrivate || !method.IsVirtual || !method.IsFinal ||
+                    !method.IsNewSlot || method.IsStatic || method.HasOverrides || method.HasGenericParameters)
+                    continue;
+
+                var interfaceName = method.Name.Substring(0, separator);
+                var methodName = method.Name.Substring(separator + 1);
+                var matches = new HashSet<MethodDefinition>();
+                foreach (var implementation in type.Interfaces)
+                {
+                    var reference = implementation.InterfaceType;
+                    if (reference is TypeSpecification || reference.FullName != interfaceName)
+                        continue;
+                    TypeDefinition interfaceType;
+                    try
+                    {
+                        interfaceType = reference.Resolve();
+                    }
+                    catch (AssemblyResolutionException)
+                    {
+                        continue;
+                    }
+                    if (interfaceType == null || !interfaceType.IsInterface || interfaceType.HasGenericParameters)
+                        continue;
+                    foreach (var candidate in interfaceType.Methods)
+                    {
+                        if (candidate.Name != methodName || candidate.IsStatic || !candidate.IsVirtual ||
+                            candidate.HasGenericParameters || candidate.CallingConvention != method.CallingConvention ||
+                            candidate.HasThis != method.HasThis || candidate.ExplicitThis != method.ExplicitThis ||
+                            candidate.Parameters.Count != method.Parameters.Count ||
+                            !SameInterfaceSignatureType(candidate.ReturnType, method.ReturnType))
+                            continue;
+                        if (candidate.Parameters.Zip(method.Parameters,
+                            (a, b) => SameInterfaceSignatureType(a.ParameterType, b.ParameterType)).All(x => x))
+                            matches.Add(candidate);
+                    }
+                }
+                if (matches.Count == 1)
+                    method.Overrides.Add(type.Module.ImportReference(matches.Single()));
+            }
+        }
+
+        private static bool SameInterfaceSignatureType(TypeReference left, TypeReference right)
+        {
+            if (left is GenericParameter || right is GenericParameter || left.MetadataType != right.MetadataType)
+                return false;
+            if (left is ArrayType array)
+                return right is ArrayType otherArray && array.IsVector == otherArray.IsVector &&
+                    array.Dimensions.SequenceEqual(otherArray.Dimensions) &&
+                    SameInterfaceSignatureType(array.ElementType, otherArray.ElementType);
+            if (left is ByReferenceType || left is PointerType)
+                return right is TypeSpecification other &&
+                    SameInterfaceSignatureType(((TypeSpecification)left).ElementType, other.ElementType);
+            if (left is GenericInstanceType generic)
+                return right is GenericInstanceType otherGeneric &&
+                    SameInterfaceSignatureType(generic.ElementType, otherGeneric.ElementType) &&
+                    generic.GenericArguments.Count == otherGeneric.GenericArguments.Count &&
+                    generic.GenericArguments.Zip(otherGeneric.GenericArguments, SameInterfaceSignatureType).All(x => x);
+            if (left is TypeSpecification || right is TypeSpecification)
+                return false;
+            var leftScope = left.Scope is ModuleDefinition leftModule ? leftModule.Assembly.Name.FullName : left.Scope?.ToString();
+            var rightScope = right.Scope is ModuleDefinition rightModule ? rightModule.Assembly.Name.FullName : right.Scope?.ToString();
+            return left.FullName == right.FullName && leftScope == rightScope;
         }
 
         private TypeReference GetTypeReferenceWithByRef(MemberReference memberReference, Il2CppType il2CppType)
