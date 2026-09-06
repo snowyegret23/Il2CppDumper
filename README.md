@@ -47,11 +47,11 @@ Create the output directory before running the command. Optional flags can appea
 Pushing to `master` publishes a GitHub Release tagged with the triggering commit's first 12 hexadecimal characters. The full commit SHA is recorded in the release notes. Windows x64 and x86 ZIPs include configuration, analysis scripts and documentation:
 
 * `net8.0-win-x64-self-contained` / `net8.0-win-x86-self-contained` (recommended): include the .NET runtime. Extract the whole ZIP and run `Il2CppDumper.exe`; no separate .NET installation is needed.
-* `net6.0-win-{x64,x86}-framework-dependent` / `net8.0-win-{x64,x86}-framework-dependent`: smaller downloads requiring the matching .NET runtime version and architecture.
+* `net8.0-win-{x64,x86}-framework-dependent`: smaller downloads requiring the matching architecture of the .NET 8 runtime. The unsupported .NET 6 target is no longer built.
 
 For Windows PE inputs, choose x86 for a 32-bit binary and x64 for a 64-bit binary. This also allows the custom PE loader to load a binary of the same architecture. Extract x86 and x64 packages into separate directories; their runtime DLLs must not be mixed.
 
-The `Release commit` workflow can also be started manually on `master`. All six packages must build and pass a CLI smoke test before release creation. Uploads finish while the release is a draft; reruns can resume a draft but leave an already published release unchanged. The workflow uses the repository's built-in `GITHUB_TOKEN` with `contents: write`, without requiring a separate secret.
+The `Release commit` workflow can also be started manually on `master`. All four packages must build and pass a CLI smoke test before release creation. Uploads finish while the release is a draft; reruns can resume a draft but leave an already published release unchanged. The workflow uses the repository's built-in `GITHUB_TOKEN` with `contents: write`, without requiring a separate secret.
 
 ### Outputs
 
