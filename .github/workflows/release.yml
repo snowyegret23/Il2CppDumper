@@ -29,9 +29,20 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - name: Set up .NET
+      - name: Set up x86 .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet-x86
+        with:
+          architecture: x86
+          dotnet-version: |
+            6.0.x
+            8.0.x
+
+      - name: Set up x64 .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
+          architecture: x64
           dotnet-version: |
             6.0.x
             8.0.x
@@ -39,6 +50,7 @@ jobs:
       - name: Build, smoke-test and package
         env:
           RELEASE_DIR: ${{ runner.temp }}/il2cpp-release
+          DOTNET_ROOT_X86: ${{ runner.temp }}/dotnet-x86
         run: |
           $ErrorActionPreference = 'Stop'
           $tag = $env:GITHUB_SHA.Substring(0, 12)
@@ -48,21 +60,23 @@ jobs:
             @{ Framework = 'net8.0'; Mode = 'framework-dependent'; SelfContained = 'false' }
             @{ Framework = 'net8.0'; Mode = 'self-contained'; SelfContained = 'true' }
           )
-          foreach ($package in $packages) {
-            $name = "$($package.Framework)-win-x64-$($package.Mode)"
-            $publishDir = Join-Path $env:RELEASE_DIR $name
-            dotnet publish Il2CppDumper/Il2CppDumper.csproj -c Release -f $package.Framework -r win-x64 --self-contained $package.SelfContained -o $publishDir -p:ContinuousIntegrationBuild=true
-            if ($LASTEXITCODE -ne 0) { throw "Publish failed for $name" }
-            & (Join-Path $publishDir 'Il2CppDumper.exe') --help
-            if ($LASTEXITCODE -ne 0) { throw "Smoke test failed for $name" }
-            if ($package.SelfContained -eq 'true' -and -not (Test-Path -LiteralPath (Join-Path $publishDir 'coreclr.dll'))) {
-              throw 'The self-contained package is missing the .NET runtime'
+          foreach ($rid in @('win-x64', 'win-x86')) {
+            foreach ($package in $packages) {
+              $name = "$($package.Framework)-$rid-$($package.Mode)"
+              $publishDir = Join-Path $env:RELEASE_DIR $name
+              dotnet publish Il2CppDumper/Il2CppDumper.csproj -c Release -f $package.Framework -r $rid --self-contained $package.SelfContained -o $publishDir -p:ContinuousIntegrationBuild=true
+              if ($LASTEXITCODE -ne 0) { throw "Publish failed for $name" }
+              & (Join-Path $publishDir 'Il2CppDumper.exe') --help
+              if ($LASTEXITCODE -ne 0) { throw "Smoke test failed for $name" }
+              if ($package.SelfContained -eq 'true' -and -not (Test-Path -LiteralPath (Join-Path $publishDir 'coreclr.dll'))) {
+                throw "The self-contained package is missing the .NET runtime: $name"
+              }
+              Copy-Item -Path README.md, README.zh-CN.md, LICENSE -Destination $publishDir
+              Copy-Item -Path Il2CppDumper/*.py -Destination $publishDir
+              Copy-Item -LiteralPath Il2CppDumper/Il2CppBinaryNinja -Destination $publishDir -Recurse
+              $archive = Join-Path $env:RELEASE_DIR "Il2CppDumper-$tag-$name.zip"
+              Compress-Archive -Path "$publishDir/*" -DestinationPath $archive -CompressionLevel Optimal
             }
-            Copy-Item -Path README.md, README.zh-CN.md, LICENSE -Destination $publishDir
-            Copy-Item -Path Il2CppDumper/*.py -Destination $publishDir
-            Copy-Item -LiteralPath Il2CppDumper/Il2CppBinaryNinja -Destination $publishDir -Recurse
-            $archive = Join-Path $env:RELEASE_DIR "Il2CppDumper-$tag-$name.zip"
-            Compress-Archive -Path "$publishDir/*" -DestinationPath $archive -CompressionLevel Optimal
           }
 
       - name: Publish the commit release
@@ -102,13 +116,15 @@ jobs:
             }
           }
 
-          $assets = @('net6.0-win-x64-framework-dependent', 'net8.0-win-x64-framework-dependent', 'net8.0-win-x64-self-contained') | ForEach-Object {
-            $asset = Join-Path $env:RELEASE_DIR "Il2CppDumper-$tag-$_.zip"
-            if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) { throw "Missing release asset: $asset" }
-            $asset
+          $assets = foreach ($rid in @('win-x64', 'win-x86')) {
+            foreach ($name in @("net6.0-$rid-framework-dependent", "net8.0-$rid-framework-dependent", "net8.0-$rid-self-contained")) {
+              $asset = Join-Path $env:RELEASE_DIR "Il2CppDumper-$tag-$name.zip"
+              if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) { throw "Missing release asset: $asset" }
+              $asset
+            }
           }
           if ($null -eq $release) {
-            $notes = "Automated build of commit $env:GITHUB_SHA.`n`nRecommended: net8.0-win-x64-self-contained.zip includes the .NET runtime; extract the ZIP and run Il2CppDumper.exe without installing .NET.`n`nThe smaller framework-dependent packages require the matching .NET 6 or .NET 8 runtime."
+            $notes = "Automated build of commit $env:GITHUB_SHA.`n`nRecommended: net8.0-win-x64-self-contained.zip or net8.0-win-x86-self-contained.zip includes the .NET runtime; extract the ZIP and run Il2CppDumper.exe without installing .NET. For Windows PE inputs, choose x86 for 32-bit binaries and x64 for 64-bit binaries. Keep the two packages in separate directories.`n`nThe smaller framework-dependent packages require the matching architecture of the .NET 6 or .NET 8 runtime."
             gh release create $tag --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "Il2CppDumper $tag" --notes $notes --draft
             if ($LASTEXITCODE -ne 0) { throw 'Could not create the draft release' }
           }
