@@ -629,9 +629,10 @@ namespace Il2CppDumper
                         }
                     }
                 }
-                catch
+                catch (Exception e)
                 {
-                    Console.WriteLine($"ERROR: Error while restoring attributeIndex {attributeIndex}");
+                    Console.WriteLine($"ERROR: Error while restoring attributeIndex {attributeIndex}: {e}");
+                    Environment.ExitCode = 1;
                 }
             }
         }

@@ -388,6 +388,7 @@ namespace Il2CppDumper
                 catch (Exception e)
                 {
                     Console.WriteLine("ERROR: Some errors in dumping");
+                    Environment.ExitCode = 1;
                     writer.Write("/*");
                     writer.Write(e);
                     writer.Write("*/\n}\n");

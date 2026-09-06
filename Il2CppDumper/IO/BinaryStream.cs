@@ -19,6 +19,8 @@ namespace Il2CppDumper
         private readonly MethodInfo readClassArray;
         private readonly Dictionary<Type, MethodInfo> genericMethodCache;
         private readonly Dictionary<FieldInfo, VersionAttribute[]> attributeCache;
+        private readonly Dictionary<FieldInfo, VariableIndexAttribute> indexAttributeCache = new();
+        private readonly Dictionary<VariableIndexKind, int> indexWidths = new();
 
         public BinaryStream(Stream input)
         {
@@ -112,6 +114,33 @@ namespace Il2CppDumper
             return ReadClass<T>();
         }
 
+        private protected void SetIndexWidth(VariableIndexKind kind, int width)
+        {
+            if (width != 1 && width != 2 && width != 4)
+                throw new InvalidDataException($"Invalid {kind} index width: {width}.");
+            indexWidths[kind] = width;
+        }
+
+        private protected int GetIndexWidth(VariableIndexKind kind)
+        {
+            return indexWidths.TryGetValue(kind, out var width) ? width : sizeof(int);
+        }
+
+        private protected int ReadIndex(VariableIndexKind kind)
+        {
+            switch (GetIndexWidth(kind))
+            {
+                case 1:
+                    var small = ReadByte();
+                    return small == byte.MaxValue ? -1 : small;
+                case 2:
+                    var medium = ReadUInt16();
+                    return medium == ushort.MaxValue ? -1 : medium;
+                default:
+                    return ReadInt32();
+            }
+        }
+
         public T ReadClass<T>() where T : new()
         {
             var type = typeof(T);
@@ -149,7 +178,16 @@ namespace Il2CppDumper
                         }
                     }
                     var fieldType = i.FieldType;
-                    if (fieldType.IsPrimitive)
+                    if (!indexAttributeCache.TryGetValue(i, out var indexAttribute))
+                    {
+                        indexAttribute = i.GetCustomAttribute<VariableIndexAttribute>();
+                        indexAttributeCache.Add(i, indexAttribute);
+                    }
+                    if (indexAttribute != null)
+                    {
+                        i.SetValue(t, ReadIndex(indexAttribute.Kind));
+                    }
+                    else if (fieldType.IsPrimitive)
                     {
                         i.SetValue(t, ReadPrimitive(fieldType));
                     }

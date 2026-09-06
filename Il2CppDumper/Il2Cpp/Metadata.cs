@@ -52,12 +52,13 @@ namespace Il2CppDumper
             {
                 throw new InvalidDataException("ERROR: Metadata file supplied is not valid metadata file.");
             }
-            if (version < 16 || version > 31)
+            if (version < 16 || (version > 31 && version != 35 && version != 38 && version != 39))
             {
                 throw new NotSupportedException($"ERROR: Metadata file supplied is not a supported version[{version}].");
             }
             Version = version;
             header = ReadClass<Il2CppGlobalMetadataHeader>(0);
+            InitializeIndexWidths();
             if (version == 24)
             {
                 if (header.stringLiteralOffset == 264)
@@ -67,14 +68,15 @@ namespace Il2CppDumper
                 }
                 else
                 {
-                    imageDefs = ReadMetadataClassArray<Il2CppImageDefinition>(header.imagesOffset, header.imagesSize);
+                    imageDefs = ReadClassArray<Il2CppImageDefinition>(header.imagesOffset,
+                        header.imagesSize / SizeOf(typeof(Il2CppImageDefinition)));
                     if (imageDefs.Any(x => x.token != 1))
                     {
                         Version = 24.1;
                     }
                 }
             }
-            imageDefs = ReadMetadataClassArray<Il2CppImageDefinition>(header.imagesOffset, header.imagesSize);
+            imageDefs = ReadMetadataClassArray<Il2CppImageDefinition>(header.imagesOffset, header.imagesSize, header.imagesCount);
             if (Version == 24.2 && header.assembliesSize / 68 < imageDefs.Length)
             {
                 Version = 24.4;
@@ -88,31 +90,32 @@ namespace Il2CppDumper
             {
                 Version = 24.4;
             }
-            assemblyDefs = ReadMetadataClassArray<Il2CppAssemblyDefinition>(header.assembliesOffset, header.assembliesSize);
+            assemblyDefs = ReadMetadataClassArray<Il2CppAssemblyDefinition>(header.assembliesOffset, header.assembliesSize, header.assembliesCount);
             if (v241Plus)
             {
                 Version = 24.1;
             }
-            typeDefs = ReadMetadataClassArray<Il2CppTypeDefinition>(header.typeDefinitionsOffset, header.typeDefinitionsSize);
-            methodDefs = ReadMetadataClassArray<Il2CppMethodDefinition>(header.methodsOffset, header.methodsSize);
-            parameterDefs = ReadMetadataClassArray<Il2CppParameterDefinition>(header.parametersOffset, header.parametersSize);
-            fieldDefs = ReadMetadataClassArray<Il2CppFieldDefinition>(header.fieldsOffset, header.fieldsSize);
-            var fieldDefaultValues = ReadMetadataClassArray<Il2CppFieldDefaultValue>(header.fieldDefaultValuesOffset, header.fieldDefaultValuesSize);
-            var parameterDefaultValues = ReadMetadataClassArray<Il2CppParameterDefaultValue>(header.parameterDefaultValuesOffset, header.parameterDefaultValuesSize);
+            typeDefs = ReadMetadataClassArray<Il2CppTypeDefinition>(header.typeDefinitionsOffset, header.typeDefinitionsSize, header.typeDefinitionsCount);
+            RestoreEnumTypes();
+            methodDefs = ReadMetadataClassArray<Il2CppMethodDefinition>(header.methodsOffset, header.methodsSize, header.methodsCount);
+            parameterDefs = ReadMetadataClassArray<Il2CppParameterDefinition>(header.parametersOffset, header.parametersSize, header.parametersCount);
+            fieldDefs = ReadMetadataClassArray<Il2CppFieldDefinition>(header.fieldsOffset, header.fieldsSize, header.fieldsCount);
+            var fieldDefaultValues = ReadMetadataClassArray<Il2CppFieldDefaultValue>(header.fieldDefaultValuesOffset, header.fieldDefaultValuesSize, header.fieldDefaultValuesCount);
+            var parameterDefaultValues = ReadMetadataClassArray<Il2CppParameterDefaultValue>(header.parameterDefaultValuesOffset, header.parameterDefaultValuesSize, header.parameterDefaultValuesCount);
             fieldDefaultValuesDic = fieldDefaultValues.ToDictionary(x => x.fieldIndex);
             parameterDefaultValuesDic = parameterDefaultValues.ToDictionary(x => x.parameterIndex);
-            propertyDefs = ReadMetadataClassArray<Il2CppPropertyDefinition>(header.propertiesOffset, header.propertiesSize);
-            interfaceIndices = ReadClassArray<int>(header.interfacesOffset, header.interfacesSize / 4);
+            propertyDefs = ReadMetadataClassArray<Il2CppPropertyDefinition>(header.propertiesOffset, header.propertiesSize, header.propertiesCount);
+            interfaceIndices = ReadIndexArray(header.interfacesOffset, header.interfacesSize, header.interfacesCount, VariableIndexKind.Type);
             nestedTypeIndices = ReadClassArray<int>(header.nestedTypesOffset, header.nestedTypesSize / 4);
-            eventDefs = ReadMetadataClassArray<Il2CppEventDefinition>(header.eventsOffset, header.eventsSize);
-            genericContainers = ReadMetadataClassArray<Il2CppGenericContainer>(header.genericContainersOffset, header.genericContainersSize);
-            genericParameters = ReadMetadataClassArray<Il2CppGenericParameter>(header.genericParametersOffset, header.genericParametersSize);
-            constraintIndices = ReadClassArray<int>(header.genericParameterConstraintsOffset, header.genericParameterConstraintsSize / 4);
+            eventDefs = ReadMetadataClassArray<Il2CppEventDefinition>(header.eventsOffset, header.eventsSize, header.eventsCount);
+            genericContainers = ReadMetadataClassArray<Il2CppGenericContainer>(header.genericContainersOffset, header.genericContainersSize, header.genericContainersCount);
+            genericParameters = ReadMetadataClassArray<Il2CppGenericParameter>(header.genericParametersOffset, header.genericParametersSize, header.genericParametersCount);
+            constraintIndices = ReadIndexArray(header.genericParameterConstraintsOffset, header.genericParameterConstraintsSize, header.genericParameterConstraintsCount, VariableIndexKind.Type);
             vtableMethods = ReadClassArray<uint>(header.vtableMethodsOffset, header.vtableMethodsSize / 4);
-            stringLiterals = ReadMetadataClassArray<Il2CppStringLiteral>(header.stringLiteralOffset, header.stringLiteralSize);
+            stringLiterals = ReadMetadataClassArray<Il2CppStringLiteral>(header.stringLiteralOffset, header.stringLiteralSize, header.stringLiteralCount);
             if (Version > 16)
             {
-                fieldRefs = ReadMetadataClassArray<Il2CppFieldRef>(header.fieldRefsOffset, header.fieldRefsSize);
+                fieldRefs = ReadMetadataClassArray<Il2CppFieldRef>(header.fieldRefsOffset, header.fieldRefsSize, header.fieldRefsCount);
                 if (Version < 27)
                 {
                     metadataUsageLists = ReadMetadataClassArray<Il2CppMetadataUsageList>(header.metadataUsageListsOffset, header.metadataUsageListsCount);
@@ -128,7 +131,7 @@ namespace Il2CppDumper
             }
             if (Version >= 29)
             {
-                attributeDataRanges = ReadMetadataClassArray<Il2CppCustomAttributeDataRange>(header.attributeDataRangeOffset, header.attributeDataRangeSize);
+                attributeDataRanges = ReadMetadataClassArray<Il2CppCustomAttributeDataRange>(header.attributeDataRangeOffset, header.attributeDataRangeSize, header.attributeDataRangeCount);
             }
             if (Version > 24)
             {
@@ -157,9 +160,80 @@ namespace Il2CppDumper
             }
         }
 
-        private T[] ReadMetadataClassArray<T>(uint addr, int count) where T : new()
+        private void InitializeIndexWidths()
         {
-            return ReadClassArray<T>(addr, count / SizeOf(typeof(T)));
+            if (Version < 38)
+                return;
+
+            SetIndexWidth(VariableIndexKind.TypeDefinition, IndexWidthForCount(header.typeDefinitionsCount));
+            SetIndexWidth(VariableIndexKind.GenericContainer, IndexWidthForCount(header.genericContainersCount));
+            if (Version >= 39)
+                SetIndexWidth(VariableIndexKind.Parameter, IndexWidthForCount(header.parametersCount));
+
+            int? typeWidth = null;
+            InferTypeWidth(header.interfaceOffsetsSize, header.interfaceOffsetsCount, 4);
+            InferTypeWidth(header.parametersSize, header.parametersCount, 8);
+            InferTypeWidth(header.fieldsSize, header.fieldsCount, 8);
+            if (typeWidth == null && header.typeDefinitionsCount > 0)
+                throw new InvalidDataException("Cannot determine the metadata TypeIndex width from empty sections.");
+            SetIndexWidth(VariableIndexKind.Type, typeWidth ?? 4);
+
+            void InferTypeWidth(int size, int count, int fixedSize)
+            {
+                if (size < 0 || count < 0 || (count == 0 && size != 0))
+                    throw new InvalidDataException("Invalid metadata section size/count.");
+                if (count == 0)
+                    return;
+                var width = size / count - fixedSize;
+                if (size % count != 0 || (width != 1 && width != 2 && width != 4) ||
+                    (typeWidth.HasValue && typeWidth != width))
+                    throw new InvalidDataException("Inconsistent metadata TypeIndex widths.");
+                typeWidth = width;
+            }
+        }
+
+        private static int IndexWidthForCount(int count)
+        {
+            if (count < 0)
+                throw new InvalidDataException($"Invalid metadata count: {count}.");
+            return count <= byte.MaxValue ? 1 : count <= ushort.MaxValue ? 2 : 4;
+        }
+
+        private void RestoreEnumTypes()
+        {
+            if (Version < 35 || !typeDefs.Any(t => t.IsEnum))
+                return;
+            var enumType = typeDefs.Single(t => GetStringFromIndex(t.nameIndex) == "Enum" &&
+                GetStringFromIndex(t.namespaceIndex) == "System");
+            foreach (var type in typeDefs.Where(t => t.IsEnum))
+            {
+                type.elementTypeIndex = type.parentIndex;
+                type.parentIndex = enumType.byvalTypeIndex;
+            }
+        }
+
+        private int ValidateSection(uint addr, int size, int count, int elementSize, string name)
+        {
+            if (size < 0 || (ulong)addr + (ulong)size > Length || elementSize <= 0 ||
+                size % elementSize != 0 || (Version >= 38 && (count < 0 || (long)count * elementSize != size)))
+                throw new InvalidDataException($"Invalid {name} section: offset={addr}, size={size}, count={count}, stride={elementSize}.");
+            return size / elementSize;
+        }
+
+        private int[] ReadIndexArray(uint addr, int size, int count, VariableIndexKind kind)
+        {
+            var length = ValidateSection(addr, size, count, GetIndexWidth(kind), kind.ToString());
+            Position = addr;
+            var values = new int[length];
+            for (var i = 0; i < values.Length; i++)
+                values[i] = ReadIndex(kind);
+            return values;
+        }
+
+        private T[] ReadMetadataClassArray<T>(uint addr, int size, int count = 0) where T : new()
+        {
+            var length = ValidateSection(addr, size, count, SizeOf(typeof(T)), typeof(T).Name);
+            return ReadClassArray<T>(addr, length);
         }
 
         public bool GetFieldDefaultValueFromIndex(int index, out Il2CppFieldDefaultValue value)
@@ -209,8 +283,15 @@ namespace Il2CppDumper
         public string GetStringLiteralFromIndex(uint index)
         {
             var stringLiteral = stringLiterals[index];
-            Position = (uint)(header.stringLiteralDataOffset + stringLiteral.dataIndex);
-            return Encoding.UTF8.GetString(ReadBytes((int)stringLiteral.length));
+            var start = stringLiteral.dataIndex;
+            var end = Version < 35 ? (long)start + stringLiteral.length
+                : index + 1 < stringLiterals.Length ? stringLiterals[index + 1].dataIndex
+                : header.stringLiteralDataSize;
+            if (start < 0 || end < start || end > header.stringLiteralDataSize ||
+                (ulong)header.stringLiteralDataOffset + (ulong)end > Length)
+                throw new InvalidDataException($"Invalid string literal range at index {index}.");
+            Position = header.stringLiteralDataOffset + (ulong)start;
+            return Encoding.UTF8.GetString(ReadBytes(checked((int)(end - start))));
         }
 
         private void ProcessingMetadataUsage()
@@ -258,14 +339,19 @@ namespace Il2CppDumper
             var size = 0;
             foreach (var i in type.GetFields())
             {
-                var attr = (VersionAttribute)Attribute.GetCustomAttribute(i, typeof(VersionAttribute));
-                if (attr != null)
+                var attributes = i.GetCustomAttributes<VersionAttribute>().ToArray();
+                if (attributes.Length > 0)
                 {
-                    if (Version < attr.Min || Version > attr.Max)
+                    if (!attributes.Any(attr => Version >= attr.Min && Version <= attr.Max))
                         continue;
                 }
                 var fieldType = i.FieldType;
-                if (fieldType.IsPrimitive)
+                var indexAttribute = i.GetCustomAttribute<VariableIndexAttribute>();
+                if (indexAttribute != null)
+                {
+                    size += GetIndexWidth(indexAttribute.Kind);
+                }
+                else if (fieldType.IsPrimitive)
                 {
                     size += GetPrimitiveTypeSize(fieldType.Name);
                 }
@@ -277,7 +363,7 @@ namespace Il2CppDumper
                 else if (fieldType.IsArray)
                 {
                     var arrayLengthAttribute = i.GetCustomAttribute<ArrayLengthAttribute>();
-                    size += arrayLengthAttribute.Length;
+                    size += arrayLengthAttribute.Length * GetPrimitiveTypeSize(fieldType.GetElementType().Name);
                 }
                 else
                 {
@@ -292,7 +378,9 @@ namespace Il2CppDumper
                 {
                     "Int32" or "UInt32" => 4,
                     "Int16" or "UInt16" => 2,
-                    _ => 0,
+                    "Byte" or "SByte" => 1,
+                    "Int64" or "UInt64" => 8,
+                    _ => throw new NotSupportedException($"Unsupported metadata primitive: {name}."),
                 };
             }
         }

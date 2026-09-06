@@ -89,6 +89,7 @@ namespace Il2CppDumper
             if (metadataPath == null)
             {
                 Console.WriteLine($"ERROR: Metadata file not found or encrypted.");
+                Environment.ExitCode = 1;
             }
             else
             {
@@ -98,13 +99,18 @@ namespace Il2CppDumper
                     {
                         Dump(metadata, il2Cpp, outputDir);
                     }
+                    else
+                    {
+                        Environment.ExitCode = 1;
+                    }
                 }
                 catch (Exception e)
                 {
                     Console.WriteLine(e);
+                    Environment.ExitCode = 1;
                 }
             }
-            if (config.RequireAnyKey)
+            if (config.RequireAnyKey && !Console.IsInputRedirected)
             {
                 Console.WriteLine("Press any key to exit...");
                 Console.ReadKey(true);

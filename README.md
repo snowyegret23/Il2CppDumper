@@ -11,6 +11,7 @@ Unity il2cpp reverse engineer
 * Complete DLL restore (except code), can be used to extract `MonoBehaviour` and `MonoScript`
 * Supports ELF, ELF64, Mach-O, PE, NSO and WASM format
 * Supports Unity 5.3 - 2022.2
+* Supports metadata 35, 38 and 39 in addition to the existing legacy parsers. Modern enum underlying types and variable-width indices are restored without dropping custom attributes. Native `.h` layouts for these newer versions are not yet generated.
 * Supports generate IDA, Ghidra and Binary Ninja scripts to help them better analyze il2cpp files
 * Supports generate structures header file
 * Supports Android memory dumped `libil2cpp.so` file to bypass protection
@@ -120,3 +121,4 @@ If you have a rooted Android phone, you can try my other project [Zygisk-Il2CppD
 ## Credits
 
 - Jumboperson - [Il2CppDumper](https://github.com/Jumboperson/Il2CppDumper)
+- [c01ns](https://github.com/c01ns/Il2CppDumper), [vmpprotect](https://github.com/vmpprotect/Il2CppDumper) and [Cpp2IL](https://github.com/SamboyCoding/Cpp2IL) - modern metadata layout references
