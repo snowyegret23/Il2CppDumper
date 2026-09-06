@@ -66,6 +66,9 @@ namespace Il2CppDumper
         public uint typeDefinitionsOffset; // Il2CppTypeDefinition
         public int typeDefinitionsSize;
         [Version(Min = 38)] public int typeDefinitionsCount;
+        [Version(Min = 104)] public uint typeInlineArraysOffset;
+        [Version(Min = 104)] public int typeInlineArraysSize;
+        [Version(Min = 104)] public int typeInlineArraysCount;
         [Version(Max = 24.1)]
         public uint rgctxEntriesOffset; // Il2CppRGCTXDefinition
         [Version(Max = 24.1)]
@@ -137,6 +140,37 @@ namespace Il2CppDumper
         [Version(Min = 24)]
         public int exportedTypeDefinitionsSize;
         [Version(Min = 38)] public int exportedTypeDefinitionsCount;
+        [Version(Min = 108)] public Il2CppMetadataSection methodSpecsOnGenericType;
+        [Version(Min = 108)] public Il2CppMetadataSection genericMethodSpecsOnType;
+        [Version(Min = 108)] public Il2CppMetadataSection methodSpecs;
+        [Version(Min = 108)] public Il2CppMetadataSection genericMethodFunctions;
+        [Version(Min = 108)] public Il2CppMetadataSection genericMethodFunctionsWithAdjustor;
+        [Version(Min = 108)] public Il2CppMetadataSection invokerIndices;
+        [Version(Min = 108)] public Il2CppMetadataSection rgctxRanges;
+        [Version(Min = 108)] public Il2CppMetadataSection rgctxValues;
+        [Version(Min = 108)] public Il2CppMetadataSection staticConstructorTypeIndices;
+        [Version(Min = 110)] public Il2CppMetadataSection generatedMethodTypeInfos;
+        [Version(Min = 110)] public Il2CppMetadataSection generatedMethodTokens;
+    }
+
+    public class Il2CppMetadataSection
+    {
+        public uint offset;
+        public int size;
+        public int count;
+    }
+
+    public class Il2CppInlineArrayLength
+    {
+        [VariableIndex(VariableIndexKind.Type)] public int typeIndex;
+        public int length;
+    }
+
+    public class Il2CppGeneratedMethodTypeInfo
+    {
+        public int typeIndex;
+        public int generatedMethodStart;
+        public int generatedMethodCount;
     }
 
     public class Il2CppAssemblyDefinition
@@ -188,6 +222,7 @@ namespace Il2CppDumper
         [Version(Min = 24)]
         public uint exportedTypeCount;
 
+        [VariableIndex(VariableIndexKind.Method)]
         public int entryPointIndex;
         [Version(Min = 19)]
         public uint token;
@@ -196,6 +231,16 @@ namespace Il2CppDumper
         public int customAttributeStart;
         [Version(Min = 24.1)]
         public uint customAttributeCount;
+        [Version(Min = 108)] public int invokerIndicesStart;
+        [Version(Min = 108)] public int rgctxRangesStart;
+        [Version(Min = 108)] public int rgctxRangesCount;
+        [Version(Min = 108), VariableIndex(VariableIndexKind.TypeDefinition)]
+        public int staticConstructorStart;
+        [Version(Min = 108)] public int staticConstructorCount;
+        [Version(Min = 110)] public int fieldStart;
+        [Version(Min = 110)] public int propertyStart;
+        [Version(Min = 110)] public int eventStart;
+        [Version(Min = 110), VariableIndex(VariableIndexKind.Method)] public int methodStart;
     }
 
     public class Il2CppTypeDefinition
@@ -235,14 +280,14 @@ namespace Il2CppDumper
 
         public uint flags;
 
-        public int fieldStart;
-        public int methodStart;
-        public int eventStart;
-        public int propertyStart;
-        public int nestedTypesStart;
-        public int interfacesStart;
+        [VariableIndex(VariableIndexKind.Field)] public int fieldStart;
+        [VariableIndex(VariableIndexKind.Method)] public int methodStart;
+        [VariableIndex(VariableIndexKind.Event)] public int eventStart;
+        [VariableIndex(VariableIndexKind.Property)] public int propertyStart;
+        [VariableIndex(VariableIndexKind.NestedType)] public int nestedTypesStart;
+        [VariableIndex(VariableIndexKind.Interface)] public int interfacesStart;
         public int vtableStart;
-        public int interfaceOffsetsStart;
+        [VariableIndex(VariableIndexKind.Interface)] public int interfaceOffsetsStart;
 
         public ushort method_count;
         public ushort property_count;
@@ -265,7 +310,7 @@ namespace Il2CppDumper
         // 12 - ClassSize is default
         // 13-16 - One of nine possible PackingSize values (0, 1, 2, 4, 8, 16, 32, 64, or 128) - the specified packing size (even for explicit layouts)
         public uint bitfield;
-        [Version(Min = 19)]
+        [Version(Min = 19, Max = 109)]
         public uint token;
 
         public bool IsValueType => (bitfield & 0x1) == 1;
@@ -297,7 +342,7 @@ namespace Il2CppDumper
         public int rgctxStartIndex;
         [Version(Max = 24.1)]
         public int rgctxCount;
-        public uint token;
+        [Version(Max = 109)] public uint token;
         public ushort flags;
         public ushort iflags;
         public ushort slot;
@@ -321,27 +366,29 @@ namespace Il2CppDumper
         public int typeIndex;
         [Version(Max = 24)]
         public int customAttributeIndex;
-        [Version(Min = 19)]
+        [Version(Min = 19, Max = 109)]
         public uint token;
     }
 
     public class Il2CppFieldDefaultValue
     {
+        [VariableIndex(VariableIndexKind.Field)]
         public int fieldIndex;
         [VariableIndex(VariableIndexKind.Type)]
         public int typeIndex;
+        [VariableIndex(VariableIndexKind.DefaultValueData)]
         public int dataIndex;
     }
 
     public class Il2CppPropertyDefinition
     {
         public uint nameIndex;
-        public int get;
-        public int set;
+        [VariableIndex(VariableIndexKind.Method)] public int get;
+        [VariableIndex(VariableIndexKind.Method)] public int set;
         public uint attrs;
         [Version(Max = 24)]
         public int customAttributeIndex;
-        [Version(Min = 19)]
+        [Version(Min = 19, Max = 109)]
         public uint token;
     }
 
@@ -378,6 +425,7 @@ namespace Il2CppDumper
         public int parameterIndex;
         [VariableIndex(VariableIndexKind.Type)]
         public int typeIndex;
+        [VariableIndex(VariableIndexKind.DefaultValueData)]
         public int dataIndex;
     }
 
@@ -386,12 +434,12 @@ namespace Il2CppDumper
         public uint nameIndex;
         [VariableIndex(VariableIndexKind.Type)]
         public int typeIndex;
-        public int add;
-        public int remove;
-        public int raise;
+        [VariableIndex(VariableIndexKind.Method)] public int add;
+        [VariableIndex(VariableIndexKind.Method)] public int remove;
+        [VariableIndex(VariableIndexKind.Method)] public int raise;
         [Version(Max = 24)]
         public int customAttributeIndex;
-        [Version(Min = 19)]
+        [Version(Min = 19, Max = 109)]
         public uint token;
     }
 
@@ -399,18 +447,20 @@ namespace Il2CppDumper
     {
         /* index of the generic type definition or the generic method definition corresponding to this container */
         public int ownerIndex; // either index into Il2CppClass metadata array or Il2CppMethodDefinition array
-        public int type_argc;
+        [Version(Max = 105)] public int type_argc;
         /* If true, we're a generic method, otherwise a generic type definition. */
-        public int is_method;
+        [Version(Max = 105)] public int is_method;
+        [Version(Min = 106)] public ushort type_argc16;
+        [Version(Min = 106)] public byte is_method8;
         /* Our type parameters. */
-        public int genericParameterStart;
+        [VariableIndex(VariableIndexKind.GenericParameter)] public int genericParameterStart;
     }
 
     public class Il2CppFieldRef
     {
         [VariableIndex(VariableIndexKind.Type)]
         public int typeIndex;
-        public int fieldIndex; // local offset into type fields
+        [VariableIndex(VariableIndexKind.Field)] public int fieldIndex; // local offset into type fields
     }
 
     public class Il2CppGenericParameter
@@ -446,11 +496,13 @@ namespace Il2CppDumper
         public Il2CppRGCTXDataType type => type_post29 == 0 ? (Il2CppRGCTXDataType)type_pre29 : (Il2CppRGCTXDataType)type_post29;
         [Version(Max = 27.1)]
         public int type_pre29;
-        [Version(Min = 29)]
+        [Version(Min = 29, Max = 107)]
         public ulong type_post29;
+        [Version(Min = 108)] public byte type_post108;
         [Version(Max = 27.1)]
+        [Version(Min = 108)]
         public Il2CppRGCTXDefinitionData data;
-        [Version(Min = 27.2)]
+        [Version(Min = 27.2, Max = 107)]
         public ulong _data;
     }
 

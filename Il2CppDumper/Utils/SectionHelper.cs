@@ -309,7 +309,8 @@ namespace Il2CppDumper
                                     }
                                     if (flag)
                                     {
-                                        return addr - il2Cpp.PointerSize * 10 - section.offset + section.address;
+                                        var fieldOffset = il2Cpp.Version >= 108 ? 6ul : 10ul;
+                                        return addr - il2Cpp.PointerSize * fieldOffset - section.offset + section.address;
                                     }
                                 }
                             }

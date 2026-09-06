@@ -81,9 +81,9 @@ namespace Il2CppDumper
                     var typeDef = metadata.typeDefs[typeIndex];
                     AddStruct(typeDef);
                     var typeName = executor.GetTypeDefName(typeDef, true, true);
-                    var methodEnd = typeDef.methodStart + typeDef.method_count;
-                    for (var i = typeDef.methodStart; i < methodEnd; ++i)
+                    for (var methodOffset = 0; methodOffset < typeDef.method_count; methodOffset++)
                     {
+                        var i = metadata.GetMethodIndex(typeDef, methodOffset);
                         var methodDef = metadata.methodDefs[i];
                         var methodName = metadata.GetStringFromIndex(methodDef.nameIndex);
                         var methodPointer = il2Cpp.GetMethodPointer(imageName, methodDef);
@@ -278,7 +278,7 @@ namespace Il2CppDumper
                         if (metadataValue < uint.MaxValue)
                         {
                             var encodedToken = (uint)metadataValue;
-                            var usage = Metadata.GetEncodedIndexType(encodedToken);
+                            var usage = il2Cpp.GetMetadataUsageType(encodedToken);
                             if (usage > 0 && usage <= 6)
                             {
                                 var decodedIndex = metadata.GetDecodedMethodIndex(encodedToken);
@@ -779,7 +779,7 @@ namespace Il2CppDumper
             {
                 var vTableIndex = typeDef.vtableStart + i;
                 var encodedMethodIndex = metadata.vtableMethods[vTableIndex];
-                var usage = Metadata.GetEncodedIndexType(encodedMethodIndex);
+                var usage = il2Cpp.GetMetadataUsageType(encodedMethodIndex);
                 var index = metadata.GetDecodedMethodIndex(encodedMethodIndex);
                 Il2CppMethodDefinition methodDef;
                 if (usage == 6) //kIl2CppMetadataUsageMethodRef
@@ -821,7 +821,7 @@ namespace Il2CppDumper
                     structInfo.RGCTXs.Add(structRGCTXInfo);
                     structRGCTXInfo.Type = definitionData.type;
                     Il2CppRGCTXDefinitionData rgctxDefData;
-                    if (il2Cpp.Version >= 27.2)
+                    if (il2Cpp.Version >= 27.2 && il2Cpp.Version < 108)
                     {
                         rgctxDefData = il2Cpp.MapVATR<Il2CppRGCTXDefinitionData>(definitionData._data);
                     }
@@ -867,7 +867,7 @@ namespace Il2CppDumper
                     rgctxs.Add(structRGCTXInfo);
                     structRGCTXInfo.Type = definitionData.type;
                     Il2CppRGCTXDefinitionData rgctxDefData;
-                    if (il2Cpp.Version >= 27.2)
+                    if (il2Cpp.Version >= 27.2 && il2Cpp.Version < 108)
                     {
                         rgctxDefData = il2Cpp.MapVATR<Il2CppRGCTXDefinitionData>(definitionData._data);
                     }

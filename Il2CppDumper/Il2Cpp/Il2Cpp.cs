@@ -9,6 +9,7 @@ namespace Il2CppDumper
     {
         private Il2CppMetadataRegistration pMetadataRegistration;
         private Il2CppCodeRegistration pCodeRegistration;
+        private Metadata metadata;
         public ulong[] methodPointers;
         public ulong[] genericMethodPointers;
         public ulong[] invokerPointers;
@@ -42,10 +43,11 @@ namespace Il2CppDumper
 
         protected Il2Cpp(Stream stream) : base(stream) { }
 
-        public void SetProperties(double version, long metadataUsagesCount)
+        public void SetProperties(double version, long metadataUsagesCount, Metadata metadata = null)
         {
             Version = version;
             this.metadataUsagesCount = metadataUsagesCount;
+            this.metadata = metadata;
         }
 
         protected bool AutoPlusInit(ulong codeRegistration, ulong metadataRegistration)
@@ -240,8 +242,30 @@ namespace Il2CppDumper
             {
                 methodPointers = MapVATR<ulong>(pCodeRegistration.methodPointers, pCodeRegistration.methodPointersCount);
             }
-            genericMethodTable = MapVATR<Il2CppGenericMethodFunctionsDefinitions>(pMetadataRegistration.genericMethodTable, pMetadataRegistration.genericMethodTableCount);
-            methodSpecs = MapVATR<Il2CppMethodSpec>(pMetadataRegistration.methodSpecs, pMetadataRegistration.methodSpecsCount);
+            if (Version >= 108)
+            {
+                if (metadata == null)
+                    throw new InvalidOperationException("Metadata is required to load v108+ RGCTX and generic methods.");
+                foreach (var image in metadata.imageDefs)
+                {
+                    var imageName = metadata.GetStringFromIndex(image.nameIndex);
+                    var ranges = rgctxsDictionary[imageName];
+                    if (image.rgctxRangesCount < 0 || image.rgctxRangesStart < 0 ||
+                        (long)image.rgctxRangesStart + image.rgctxRangesCount > metadata.rgctxRanges.Length)
+                        throw new InvalidDataException("Invalid image RGCTX range.");
+                    for (var i = 0; i < image.rgctxRangesCount; i++)
+                    {
+                        var range = metadata.rgctxRanges[image.rgctxRangesStart + i];
+                        var entries = new Il2CppRGCTXDefinition[range.range.length];
+                        Array.Copy(metadata.rgctxEntries, range.range.start, entries, 0, entries.Length);
+                        ranges.Add(range.token, entries);
+                    }
+                }
+            }
+            genericMethodTable = Version >= 108 ? metadata.ReadGenericMethodTable(genericMethodPointers.Length, invokerPointers.Length)
+                : MapVATR<Il2CppGenericMethodFunctionsDefinitions>(pMetadataRegistration.genericMethodTable, pMetadataRegistration.genericMethodTableCount);
+            methodSpecs = Version >= 108 ? metadata.methodSpecs
+                : MapVATR<Il2CppMethodSpec>(pMetadataRegistration.methodSpecs, pMetadataRegistration.methodSpecsCount);
             foreach (var table in genericMethodTable)
             {
                 var methodSpec = methodSpecs[table.genericMethodIndex];
@@ -251,8 +275,17 @@ namespace Il2CppDumper
                     list = new List<Il2CppMethodSpec>();
                     methodDefinitionMethodSpecs.Add(methodDefinitionIndex, list);
                 }
-                list.Add(methodSpec);
-                methodSpecGenericMethodPointers.Add(methodSpec, genericMethodPointers[table.indices.methodIndex]);
+                var pointer = genericMethodPointers[table.indices.methodIndex];
+                if (methodSpecGenericMethodPointers.TryGetValue(methodSpec, out var existing))
+                {
+                    if (existing != pointer)
+                        throw new InvalidDataException("Conflicting generic method pointers.");
+                }
+                else
+                {
+                    list.Add(methodSpec);
+                    methodSpecGenericMethodPointers.Add(methodSpec, pointer);
+                }
             }
         }
 
@@ -338,6 +371,12 @@ namespace Il2CppDumper
                 }
             }
             return 0;
+        }
+
+        public uint GetMetadataUsageType(uint encoded)
+        {
+            var usage = Metadata.GetEncodedIndexType(encoded);
+            return Version >= 106.1 && usage >= 2 ? usage + 1 : usage;
         }
 
         public virtual ulong GetRVA(ulong pointer)

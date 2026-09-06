@@ -7,7 +7,20 @@ namespace Il2CppDumper
         Type,
         TypeDefinition,
         GenericContainer,
-        Parameter
+        Parameter,
+        Event,
+        Property,
+        NestedType,
+        Interface,
+        Method,
+        GenericParameter,
+        Field,
+        DefaultValueData,
+        GenericInst,
+        MethodSpec,
+        MethodPointer,
+        Invoker,
+        AdjustorThunk
     }
 
     [AttributeUsage(AttributeTargets.Field)]

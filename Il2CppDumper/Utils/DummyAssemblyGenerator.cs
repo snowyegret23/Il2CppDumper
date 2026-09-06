@@ -216,9 +216,9 @@ namespace Il2CppDumper
                         }
                     }
                     //method
-                    var methodEnd = typeDef.methodStart + typeDef.method_count;
-                    for (var i = typeDef.methodStart; i < methodEnd; ++i)
+                    for (var methodOffset = 0; methodOffset < typeDef.method_count; methodOffset++)
                     {
+                        var i = metadata.GetMethodIndex(typeDef, methodOffset);
                         var methodDef = metadata.methodDefs[i];
                         var methodName = metadata.GetStringFromIndex(methodDef.nameIndex);
                         var methodDefinition = new MethodDefinition(methodName, (MethodAttributes)methodDef.flags, typeDefinition.Module.ImportReference(typeSystem.Void))
@@ -332,12 +332,12 @@ namespace Il2CppDumper
                         MethodDefinition SetMethod = null;
                         if (propertyDef.get >= 0)
                         {
-                            GetMethod = methodDefinitionDic[typeDef.methodStart + propertyDef.get];
+                            GetMethod = methodDefinitionDic[metadata.GetMethodIndex(typeDef, propertyDef.get)];
                             propertyType = GetMethod.ReturnType;
                         }
                         if (propertyDef.set >= 0)
                         {
-                            SetMethod = methodDefinitionDic[typeDef.methodStart + propertyDef.set];
+                            SetMethod = methodDefinitionDic[metadata.GetMethodIndex(typeDef, propertyDef.set)];
                             propertyType ??= SetMethod.Parameters[0].ParameterType;
                         }
                         var propertyDefinition = new PropertyDefinition(propertyName, (PropertyAttributes)propertyDef.attrs, propertyType)
@@ -365,11 +365,11 @@ namespace Il2CppDumper
                         var eventTypeRef = GetTypeReference(typeDefinition, eventType);
                         var eventDefinition = new EventDefinition(eventName, (EventAttributes)eventType.attrs, eventTypeRef);
                         if (eventDef.add >= 0)
-                            eventDefinition.AddMethod = methodDefinitionDic[typeDef.methodStart + eventDef.add];
+                            eventDefinition.AddMethod = methodDefinitionDic[metadata.GetMethodIndex(typeDef, eventDef.add)];
                         if (eventDef.remove >= 0)
-                            eventDefinition.RemoveMethod = methodDefinitionDic[typeDef.methodStart + eventDef.remove];
+                            eventDefinition.RemoveMethod = methodDefinitionDic[metadata.GetMethodIndex(typeDef, eventDef.remove)];
                         if (eventDef.raise >= 0)
-                            eventDefinition.InvokeMethod = methodDefinitionDic[typeDef.methodStart + eventDef.raise];
+                            eventDefinition.InvokeMethod = methodDefinitionDic[metadata.GetMethodIndex(typeDef, eventDef.raise)];
                         typeDefinition.Events.Add(eventDefinition);
                         eventDefinitionDic.Add(i, eventDefinition);
 
@@ -406,9 +406,9 @@ namespace Il2CppDumper
                         }
 
                         //method
-                        var methodEnd = typeDef.methodStart + typeDef.method_count;
-                        for (var i = typeDef.methodStart; i < methodEnd; ++i)
+                        for (var methodOffset = 0; methodOffset < typeDef.method_count; methodOffset++)
                         {
+                            var i = metadata.GetMethodIndex(typeDef, methodOffset);
                             var methodDef = metadata.methodDefs[i];
                             var methodDefinition = methodDefinitionDic[i];
                             //methodAttribute
@@ -603,24 +603,28 @@ namespace Il2CppDumper
                             {
                                 var visitor = reader.VisitCustomAttributeData();
                                 var methodDefinition = methodDefinitionDic[visitor.CtorIndex];
-                                var customAttribute = new CustomAttribute(moduleDefinition.ImportReference(methodDefinition));
+                                var constructor = GetAttributeConstructor(methodDefinition, visitor.CtorSpec, moduleDefinition);
+                                var customAttribute = new CustomAttribute(constructor);
                                 foreach (var argument in visitor.Arguments)
                                 {
                                     var parameterDefinition = methodDefinition.Parameters[argument.Index];
-                                    var customAttributeArgument = CreateCustomAttributeArgument(parameterDefinition.ParameterType, argument.Value, methodDefinition);
+                                    var argumentType = ResolveAttributeParameterType(parameterDefinition.ParameterType, constructor);
+                                    var customAttributeArgument = CreateCustomAttributeArgument(argumentType, argument.Value, methodDefinition);
                                     customAttribute.ConstructorArguments.Add(customAttributeArgument);
                                 }
                                 foreach (var field in visitor.Fields)
                                 {
                                     var fieldDefinition = fieldDefinitionDic[field.Index];
-                                    var customAttributeArgument = CreateCustomAttributeArgument(fieldDefinition.FieldType, field.Value, fieldDefinition);
+                                    var argumentType = ResolveAttributeParameterType(fieldDefinition.FieldType, constructor);
+                                    var customAttributeArgument = CreateCustomAttributeArgument(argumentType, field.Value, fieldDefinition);
                                     var customAttributeNamedArgument = new CustomAttributeNamedArgument(fieldDefinition.Name, customAttributeArgument);
                                     customAttribute.Fields.Add(customAttributeNamedArgument);
                                 }
                                 foreach (var property in visitor.Properties)
                                 {
                                     var propertyDefinition = propertyDefinitionDic[property.Index];
-                                    var customAttributeArgument = CreateCustomAttributeArgument(propertyDefinition.PropertyType, property.Value, propertyDefinition);
+                                    var argumentType = ResolveAttributeParameterType(propertyDefinition.PropertyType, constructor);
+                                    var customAttributeArgument = CreateCustomAttributeArgument(argumentType, property.Value, propertyDefinition);
                                     var customAttributeNamedArgument = new CustomAttributeNamedArgument(propertyDefinition.Name, customAttributeArgument);
                                     customAttribute.Properties.Add(customAttributeNamedArgument);
                                 }
@@ -635,6 +639,44 @@ namespace Il2CppDumper
                     Environment.ExitCode = 1;
                 }
             }
+        }
+
+        private MethodReference GetAttributeConstructor(MethodDefinition method, Il2CppMethodSpec spec, ModuleDefinition module)
+        {
+            if (spec == null || spec.classIndexIndex < 0)
+                return module.ImportReference(method);
+            if (spec.methodIndexIndex >= 0)
+                throw new InvalidDataException("An attribute constructor cannot have method generic arguments.");
+            var instance = new GenericInstanceType(module.ImportReference(method.DeclaringType));
+            var arguments = il2Cpp.genericInsts[spec.classIndexIndex];
+            foreach (var pointer in il2Cpp.MapVATR<ulong>(arguments.type_argv, arguments.type_argc))
+                instance.GenericArguments.Add(module.ImportReference(GetTypeReference(method, il2Cpp.GetIl2CppType(pointer))));
+            if (instance.GenericArguments.Count != method.DeclaringType.GenericParameters.Count)
+                throw new InvalidDataException("Attribute constructor generic arity mismatch.");
+            var constructor = new MethodReference(method.Name, module.TypeSystem.Void, instance)
+            {
+                HasThis = method.HasThis,
+                ExplicitThis = method.ExplicitThis,
+                CallingConvention = method.CallingConvention
+            };
+            foreach (var parameter in method.Parameters)
+                constructor.Parameters.Add(new ParameterDefinition(parameter.ParameterType));
+            return module.ImportReference(constructor);
+        }
+
+        private static TypeReference ResolveAttributeParameterType(TypeReference type, MethodReference constructor)
+        {
+            if (constructor.DeclaringType is not GenericInstanceType instance)
+                return type;
+            if (type is GenericParameter parameter && parameter.Type == GenericParameterType.Type)
+            {
+                if (parameter.Owner is not TypeReference owner || owner.FullName != instance.ElementType.FullName)
+                    throw new NotSupportedException("A generic attribute base member requires its own closed declaring type.");
+                return instance.GenericArguments[parameter.Position];
+            }
+            if (type is ArrayType array)
+                return new ArrayType(ResolveAttributeParameterType(array.ElementType, constructor), array.Rank);
+            return type;
         }
 
         private static bool TryRestoreCustomAttribute(TypeDefinition attributeType, ModuleDefinition moduleDefinition, Collection<CustomAttribute> customAttributes)

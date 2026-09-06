@@ -11,11 +11,19 @@ Unity il2cpp reverse engineer
 * Complete DLL restore (except code), can be used to extract `MonoBehaviour` and `MonoScript`
 * Supports ELF, ELF64, Mach-O, PE, NSO and WASM format
 * Supports Unity 5.3 - 2022.2
-* Supports metadata 35, 38 and 39 in addition to the existing legacy parsers. Modern enum underlying types and variable-width indices are restored without dropping custom attributes. Native `.h` layouts for these newer versions are not yet generated.
+* Keeps the existing metadata 16–31 parsers and adds 35, 38, 39, 104–108 and 110, including the 106.1 binary variant. Restores variable-width indices, enum types, encoded attribute constructors, relocated generic/RGCTX tables and computed metadata tokens.
 * Supports generate IDA, Ghidra and Binary Ninja scripts to help them better analyze il2cpp files
 * Supports generate structures header file
 * Supports Android memory dumped `libil2cpp.so` file to bypass protection
 * Support bypassing simple PE protection
+
+### Version coverage
+
+End-to-end Windows PE samples have been checked for metadata 24.4 (binary 24.5), 31, 39, 106 and 108. Other branches have layout/edge-case checks, not complete real-game coverage; in particular, 110 token reconstruction has only been checked with synthetic data. Unknown newer versions are rejected instead of being interpreted as an older layout.
+
+Versions 106/107 can represent two binary layouts. Their attribute constructor tags distinguish 106 from 106.1 automatically. If these tags are absent, set `ForceIl2CppVersion` and `ForceVersion` to the appropriate binary layout in `config.json`.
+
+Native `.h` generation for v35+ is still unsupported. Modern in-memory dumps and non-PE binaries have not yet received the same end-to-end validation.
 
 ## Usage
 
@@ -122,3 +130,4 @@ If you have a rooted Android phone, you can try my other project [Zygisk-Il2CppD
 
 - Jumboperson - [Il2CppDumper](https://github.com/Jumboperson/Il2CppDumper)
 - [c01ns](https://github.com/c01ns/Il2CppDumper), [vmpprotect](https://github.com/vmpprotect/Il2CppDumper) and [Cpp2IL](https://github.com/SamboyCoding/Cpp2IL) - modern metadata layout references
+- [Il2CppInspectorRedux](https://github.com/LukeFZ/Il2CppInspectorRedux) - metadata version/layout cross-checks; not a runtime dependency

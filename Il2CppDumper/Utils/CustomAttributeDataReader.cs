@@ -24,7 +24,7 @@ namespace Il2CppDumper
         public string GetStringCustomAttributeData()
         {
             BaseStream.Position = ctorBuffer;
-            var ctorIndex = ReadInt32();
+            var (ctorIndex, ctorSpec) = ReadConstructor();
             var methodDef = metadata.methodDefs[ctorIndex];
             var typeDef = metadata.typeDefs[methodDef.declaringType];
             ctorBuffer = BaseStream.Position;
@@ -57,7 +57,8 @@ namespace Il2CppDumper
             dataBuffer = BaseStream.Position;
 
 
-            var typeName = metadata.GetStringFromIndex(typeDef.nameIndex).Replace("Attribute", "");
+            var typeName = (ctorSpec == null ? metadata.GetStringFromIndex(typeDef.nameIndex)
+                : executor.GetMethodSpecName(ctorSpec).Item1).Replace("Attribute", "");
             if (argList.Count > 0)
             {
                 return $"[{typeName}({string.Join(", ", argList)})]";
@@ -100,8 +101,9 @@ namespace Il2CppDumper
             var visitor = new CustomAttributeReaderVisitor();
 
             BaseStream.Position = ctorBuffer;
-            var ctorIndex = ReadInt32();
+            var (ctorIndex, ctorSpec) = ReadConstructor();
             visitor.CtorIndex = ctorIndex;
+            visitor.CtorSpec = ctorSpec;
             var methodDef = metadata.methodDefs[ctorIndex];
             var typeDef = metadata.typeDefs[methodDef.declaringType];
             ctorBuffer = BaseStream.Position;
@@ -160,9 +162,28 @@ namespace Il2CppDumper
             memberIndex = -(memberIndex + 1);
 
             var typeIndex = this.ReadCompressedUInt32();
-            var declaringClass = metadata.typeDefs[typeIndex];
+            var declaringClass = metadata.Version >= 104
+                ? executor.GetTypeDefinitionFromIl2CppType(executor.il2Cpp.types[typeIndex])
+                : metadata.typeDefs[typeIndex];
 
             return (declaringClass, memberIndex);
+        }
+
+        private (int, Il2CppMethodSpec) ReadConstructor()
+        {
+            var encoded = ReadUInt32();
+            if (metadata.Version < 104)
+                return (checked((int)encoded), null);
+            var usage = executor.il2Cpp.GetMetadataUsageType(encoded);
+            var index = metadata.GetDecodedMethodIndex(encoded);
+            if (usage == (uint)Il2CppMetadataUsage.kIl2CppMetadataUsageMethodDef)
+                return (checked((int)index), null);
+            if (usage == (uint)Il2CppMetadataUsage.kIl2CppMetadataUsageMethodRef)
+            {
+                var spec = executor.il2Cpp.methodSpecs[index];
+                return (spec.methodDefinitionIndex, spec);
+            }
+            throw new InvalidDataException($"Invalid custom attribute constructor usage: {encoded:X8}.");
         }
     }
 }

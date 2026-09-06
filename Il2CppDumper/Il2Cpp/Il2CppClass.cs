@@ -71,12 +71,12 @@ namespace Il2CppDumper
         public ulong genericClasses;
         public long genericInstsCount;
         public ulong genericInsts;
-        public long genericMethodTableCount;
-        public ulong genericMethodTable;
+        [Version(Max = 107)] public long genericMethodTableCount;
+        [Version(Max = 107)] public ulong genericMethodTable;
         public long typesCount;
         public ulong types;
-        public long methodSpecsCount;
-        public ulong methodSpecs;
+        [Version(Max = 107)] public long methodSpecsCount;
+        [Version(Max = 107)] public ulong methodSpecs;
         [Version(Max = 16)]
         public long methodReferencesCount;
         [Version(Max = 16)]
@@ -91,6 +91,8 @@ namespace Il2CppDumper
         public ulong metadataUsagesCount;
         [Version(Min = 19)]
         public ulong metadataUsages;
+        [Version(Min = 106.1)] public ulong alwaysInitMetadataUsagesCount;
+        [Version(Min = 106.1)] public ulong alwaysInitMetadataUsages;
     }
 
     public enum Il2CppTypeEnum
@@ -269,19 +271,19 @@ namespace Il2CppDumper
         [Version(Min = 24.5, Max = 24.5)]
         [Version(Min = 27.1)]
         public ulong adjustorThunks;
-        public ulong invokerIndices;
+        [Version(Max = 107)] public ulong invokerIndices;
         public ulong reversePInvokeWrapperCount;
         public ulong reversePInvokeWrapperIndices;
-        public long rgctxRangesCount;
-        public ulong rgctxRanges;
-        public long rgctxsCount;
-        public ulong rgctxs;
+        [Version(Max = 107)] public long rgctxRangesCount;
+        [Version(Max = 107)] public ulong rgctxRanges;
+        [Version(Max = 107)] public long rgctxsCount;
+        [Version(Max = 107)] public ulong rgctxs;
         public ulong debuggerMetadata;
         [Version(Min = 27, Max = 27.2)]
         public ulong customAttributeCacheGenerator;
         [Version(Min = 27)]
         public ulong moduleInitializer;
-        [Version(Min = 27)]
+        [Version(Min = 27, Max = 107)]
         public ulong staticConstructorTypeIndices;
         [Version(Min = 27)]
         public ulong metadataRegistration; // Per-assembly mode only
