@@ -32,7 +32,7 @@ jobs:
       - name: Set up x86 .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         env:
-          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet-x86
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet-architectures
         with:
           architecture: x86
           dotnet-version: |
@@ -50,7 +50,7 @@ jobs:
       - name: Build, smoke-test and package
         env:
           RELEASE_DIR: ${{ runner.temp }}/il2cpp-release
-          DOTNET_ROOT_X86: ${{ runner.temp }}/dotnet-x86
+          DOTNET_ROOT_X86: ${{ runner.temp }}/dotnet-architectures/x86
         run: |
           $ErrorActionPreference = 'Stop'
           $tag = $env:GITHUB_SHA.Substring(0, 12)
