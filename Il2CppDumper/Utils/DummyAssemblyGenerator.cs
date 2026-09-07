@@ -57,6 +57,7 @@ namespace Il2CppDumper
 
             var parameterDefinitionDic = new Dictionary<int, ParameterDefinition>();
             var eventDefinitionDic = new Dictionary<int, EventDefinition>();
+            var imageModules = new Dictionary<Il2CppImageDefinition, ModuleDefinition>();
 
             //创建程序集，同时创建所有类
             foreach (var imageDef in metadata.imageDefs)
@@ -84,6 +85,7 @@ namespace Il2CppDumper
                 resolver.Register(assemblyDefinition);
                 Assemblies.Add(assemblyDefinition);
                 var moduleDefinition = assemblyDefinition.MainModule;
+                imageModules.Add(imageDef, moduleDefinition);
                 moduleDefinition.Types.Clear();//清除自动创建的<Module>类
                 var typeEnd = imageDef.typeStart + imageDef.typeCount;
                 for (var index = imageDef.typeStart; index < typeEnd; ++index)
@@ -392,6 +394,15 @@ namespace Il2CppDumper
             {
                 foreach (var imageDef in metadata.imageDefs)
                 {
+                    var moduleDefinition = imageModules[imageDef];
+                    var assemblyDef = metadata.assemblyDefs[imageDef.assemblyIndex];
+                    CreateCustomAttribute(imageDef, assemblyDef.customAttributeIndex, assemblyDef.token,
+                        moduleDefinition, moduleDefinition.Assembly.CustomAttributes);
+                    if (metadata.Version >= 38 && assemblyDef.moduleToken != 0)
+                    {
+                        CreateCustomAttribute(imageDef, -1, assemblyDef.moduleToken,
+                            moduleDefinition, moduleDefinition.CustomAttributes);
+                    }
                     var typeEnd = imageDef.typeStart + imageDef.typeCount;
                     for (int index = imageDef.typeStart; index < typeEnd; index++)
                     {
@@ -418,6 +429,11 @@ namespace Il2CppDumper
                             var methodDefinition = methodDefinitionDic[i];
                             //methodAttribute
                             CreateCustomAttribute(imageDef, methodDef.customAttributeIndex, methodDef.token, typeDefinition.Module, methodDefinition.CustomAttributes);
+                            if (metadata.Version >= 31 && methodDef.returnParameterToken != 0)
+                            {
+                                CreateCustomAttribute(imageDef, -1, (uint)methodDef.returnParameterToken,
+                                    typeDefinition.Module, methodDefinition.MethodReturnType.CustomAttributes);
+                            }
 
                             //method parameter
                             for (var j = 0; j < methodDef.parameterCount; ++j)

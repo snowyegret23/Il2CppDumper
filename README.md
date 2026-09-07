@@ -8,10 +8,11 @@ Unity il2cpp reverse engineer
 
 ## Features
 
-* Complete DLL restore (except code), can be used to extract `MonoBehaviour` and `MonoScript`
+* Restores DLL metadata without original method bodies, for `MonoBehaviour` and `MonoScript` extraction
 * Supports ELF, ELF64, Mach-O, PE, NSO and WASM format
-* Supports Unity 5.3 - 2022.2
+* Supports legacy Unity 5.3+ and the Unity 6 metadata layouts listed below
 * Keeps the existing metadata 16–31 parsers and adds 35, 38, 39, 104–108 and 110, including the 106.1 binary variant. Restores variable-width indices, enum types, encoded attribute constructors, relocated generic/RGCTX tables and computed metadata tokens.
+* Restores assembly custom attributes (v21+), return-value custom attributes (v31+) and module custom attributes (v38+) when present in the metadata, in addition to type/member attributes.
 * Supports generate IDA, Ghidra and Binary Ninja scripts to help them better analyze il2cpp files
 * Supports generate structures header file
 * Supports Android memory dumped `libil2cpp.so` file to bypass protection
@@ -60,6 +61,17 @@ The `Release commit` workflow can also be started manually on `master`. All four
 Folder, containing all restored dll files
 
 Use [dnSpy](https://github.com/0xd4d/dnSpy), [ILSpy](https://github.com/icsharpcode/ILSpy) or other .Net decompiler tools to view
+
+Custom attributes are attached to their original assembly, module or method
+return value, not to a substitute type or method. This preserves information
+such as assembly metadata, module annotations, readonly returns and return
+tuple element names. Legacy v21–27 attribute arguments still have the existing
+best-effort restoration limits; missing metadata is not inferred.
+
+With `DumpAttribute` enabled, `dump.cs` also includes these attributes using
+`assembly:`, `module:` and `return:` targets. Assembly/module groups are labelled
+with their source image because the dump combines multiple assemblies; it is
+an analysis listing, not a single compilable C# assembly.
 
 Can be used to extract Unity `MonoBehaviour` and `MonoScript`, for [UtinyRipper](https://github.com/mafaca/UtinyRipper), [UABE](https://7daystodie.com/forums/showthread.php?22675-Unity-Assets-Bundle-Extractor)
 

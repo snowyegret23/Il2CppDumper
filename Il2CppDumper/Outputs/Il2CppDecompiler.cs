@@ -37,6 +37,20 @@ namespace Il2CppDumper
                 try
                 {
                     var imageName = metadata.GetStringFromIndex(imageDef.nameIndex);
+                    if (config.DumpAttribute)
+                    {
+                        var assemblyDef = metadata.assemblyDefs[imageDef.assemblyIndex];
+                        var assemblyAttributes = GetCustomAttribute(imageDef, assemblyDef.customAttributeIndex,
+                            assemblyDef.token, "", "assembly: ");
+                        var moduleAttributes = metadata.Version >= 38 && assemblyDef.moduleToken != 0
+                            ? GetCustomAttribute(imageDef, -1, assemblyDef.moduleToken, "", "module: ") : "";
+                        if (assemblyAttributes.Length > 0 || moduleAttributes.Length > 0)
+                        {
+                            writer.Write($"\n// Assembly and module attributes: {imageName}\n");
+                            writer.Write(assemblyAttributes);
+                            writer.Write(moduleAttributes);
+                        }
+                    }
                     var typeEnd = imageDef.typeStart + imageDef.typeCount;
                     for (int typeDefIndex = imageDef.typeStart; typeDefIndex < typeEnd; typeDefIndex++)
                     {
@@ -247,6 +261,11 @@ namespace Il2CppDumper
                                 if (config.DumpAttribute)
                                 {
                                     writer.Write(GetCustomAttribute(imageDef, methodDef.customAttributeIndex, methodDef.token, "\t"));
+                                    if (metadata.Version >= 31 && methodDef.returnParameterToken != 0)
+                                    {
+                                        writer.Write(GetCustomAttribute(imageDef, -1, (uint)methodDef.returnParameterToken,
+                                            "\t", "return: "));
+                                    }
                                 }
                                 if (config.DumpMethodOffset)
                                 {
@@ -398,6 +417,9 @@ namespace Il2CppDumper
         }
 
         public string GetCustomAttribute(Il2CppImageDefinition imageDef, int customAttributeIndex, uint token, string padding = "")
+            => GetCustomAttribute(imageDef, customAttributeIndex, token, padding, "");
+
+        private string GetCustomAttribute(Il2CppImageDefinition imageDef, int customAttributeIndex, uint token, string padding, string target)
         {
             if (il2Cpp.Version < 21)
                 return string.Empty;
@@ -413,12 +435,13 @@ namespace Il2CppDumper
                     for (var i = 0; i < attributeTypeRange.count; i++)
                     {
                         var typeIndex = metadata.attributeTypes[attributeTypeRange.start + i];
-                        sb.AppendFormat("{0}[{1}] // RVA: 0x{2:X} Offset: 0x{3:X} VA: 0x{4:X}\n",
+                        sb.AppendFormat("{0}[{5}{1}] // RVA: 0x{2:X} Offset: 0x{3:X} VA: 0x{4:X}\n",
                             padding,
                             executor.GetTypeName(il2Cpp.types[typeIndex], false, false),
                             fixedMethodPointer,
                             il2Cpp.MapVATR(methodPointer),
-                            methodPointer);
+                            methodPointer,
+                            target);
                     }
                     return sb.ToString();
                 }
@@ -437,7 +460,8 @@ namespace Il2CppDumper
                     for (var i = 0; i < reader.Count; i++)
                     {
                         sb.Append(padding);
-                        sb.Append(reader.GetStringCustomAttributeData());
+                        var attribute = reader.GetStringCustomAttributeData();
+                        sb.Append(target.Length == 0 ? attribute : attribute.Insert(1, target));
                         sb.Append('\n');
                     }
                     return sb.ToString();
