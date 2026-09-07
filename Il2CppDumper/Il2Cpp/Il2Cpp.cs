@@ -304,6 +304,35 @@ namespace Il2CppDumper
             return ReadClassArray<T>(MapVATR(addr), count);
         }
 
+        public uint? GetTypeDefinitionInstanceSize(int typeIndex)
+        {
+            if (pMetadataRegistration == null || typeIndex < 0 ||
+                typeIndex >= pMetadataRegistration.typeDefinitionsSizesCount ||
+                pMetadataRegistration.typeDefinitionsSizes == 0)
+                return null;
+
+            var position = Position;
+            try
+            {
+                var pointerOffset = MapVATR(checked(pMetadataRegistration.typeDefinitionsSizes + (ulong)typeIndex * PointerSize));
+                if (pointerOffset == 0 || pointerOffset > Length || PointerSize > Length - pointerOffset)
+                    throw new InvalidDataException("Type size pointer is outside the binary.");
+                Position = pointerOffset;
+                var pointer = ReadUIntPtr();
+                if (pointer == 0)
+                    return null;
+                var sizeOffset = MapVATR(pointer);
+                if (sizeOffset == 0 || sizeOffset > Length || 16 > Length - sizeOffset)
+                    throw new InvalidDataException("Type size record is outside the binary.");
+                Position = sizeOffset;
+                return ReadUInt32();
+            }
+            finally
+            {
+                Position = position;
+            }
+        }
+
         public int GetFieldOffsetFromIndex(int typeIndex, int fieldIndexInType, int fieldIndex, bool isValueType, bool isStatic)
         {
             try

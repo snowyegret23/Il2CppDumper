@@ -180,7 +180,13 @@ namespace Il2CppDumper
                                 writer.Write($"{executor.GetTypeName(fieldType, false, false)} {metadata.GetStringFromIndex(fieldDef.nameIndex)}");
                                 if (metadata.GetFieldDefaultValueFromIndex(i, out var fieldDefaultValue) && fieldDefaultValue.dataIndex != -1)
                                 {
-                                    if (executor.TryGetDefaultValue(fieldDefaultValue.typeIndex, fieldDefaultValue.dataIndex, out var value))
+                                    if ((fieldType.attrs & 0x100) != 0)
+                                    {
+                                        var size = executor.GetFieldRvaSize(fieldType);
+                                        var offset = (ulong)metadata.header.fieldAndParameterDefaultValueDataOffset + (uint)fieldDefaultValue.dataIndex;
+                                        writer.Write($" /* RVA data{(size.HasValue ? $": {size.Value} bytes" : "")}, metadata offset 0x{offset:X} */");
+                                    }
+                                    else if (executor.TryGetDefaultValue(fieldDefaultValue.typeIndex, fieldDefaultValue.dataIndex, out var value))
                                     {
                                         writer.Write($" = ");
                                         if (value is string str)

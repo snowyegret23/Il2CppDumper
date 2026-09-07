@@ -323,6 +323,74 @@ namespace Il2CppDumper
             return il2Cpp.GetSectionHelper(metadata.methodDefs.Count(x => x.methodIndex >= 0), metadata.typeDefs.Length, metadata.imageDefs.Length);
         }
 
+        public int? GetFieldRvaSize(Il2CppType type)
+        {
+            switch (type.type)
+            {
+                case Il2CppTypeEnum.IL2CPP_TYPE_BOOLEAN:
+                case Il2CppTypeEnum.IL2CPP_TYPE_I1:
+                case Il2CppTypeEnum.IL2CPP_TYPE_U1:
+                    return 1;
+                case Il2CppTypeEnum.IL2CPP_TYPE_CHAR:
+                case Il2CppTypeEnum.IL2CPP_TYPE_I2:
+                case Il2CppTypeEnum.IL2CPP_TYPE_U2:
+                    return 2;
+                case Il2CppTypeEnum.IL2CPP_TYPE_I4:
+                case Il2CppTypeEnum.IL2CPP_TYPE_U4:
+                case Il2CppTypeEnum.IL2CPP_TYPE_R4:
+                    return 4;
+                case Il2CppTypeEnum.IL2CPP_TYPE_I8:
+                case Il2CppTypeEnum.IL2CPP_TYPE_U8:
+                case Il2CppTypeEnum.IL2CPP_TYPE_R8:
+                    return 8;
+                case Il2CppTypeEnum.IL2CPP_TYPE_VALUETYPE:
+                    var definition = GetTypeDefinitionFromIl2CppType(type);
+                    if (!definition.IsValueType || definition.field_count != 0 || (definition.flags & 0x18) == 0 ||
+                        definition.genericContainerIndex >= 0 || (definition.bitfield & (1u << 11)) != 0)
+                        return null;
+                    var instanceSize = il2Cpp.GetTypeDefinitionInstanceSize(Array.IndexOf(metadata.typeDefs, definition));
+                    var objectSize = il2Cpp.PointerSize * 2;
+                    if (!instanceSize.HasValue || instanceSize <= objectSize || instanceSize - objectSize > int.MaxValue)
+                        return null;
+                    return (int)(instanceSize.Value - objectSize);
+                default:
+                    return null;
+            }
+        }
+
+        public bool TryGetFieldRvaData(int fieldIndex, out byte[] data)
+        {
+            data = null;
+            var field = metadata.fieldDefs[fieldIndex];
+            var type = il2Cpp.types[field.typeIndex];
+            if ((type.attrs & 0x110) != 0x110 || type.byref != 0 ||
+                !metadata.GetFieldDefaultValueFromIndex(fieldIndex, out var value) || value.dataIndex == -1)
+                return false;
+            var size = GetFieldRvaSize(type);
+            if (!size.HasValue)
+                return false;
+
+            var sectionSize = metadata.header.fieldAndParameterDefaultValueDataSize;
+            var offset = (ulong)metadata.header.fieldAndParameterDefaultValueDataOffset + (uint)value.dataIndex;
+            if (value.dataIndex < 0 || sectionSize < 0 || value.dataIndex > sectionSize ||
+                size.Value > sectionSize - value.dataIndex || offset > metadata.Length || (ulong)size.Value > metadata.Length - offset)
+                throw new InvalidDataException($"Field RVA data is outside the metadata default-value section (field {fieldIndex}).");
+
+            var position = metadata.Position;
+            try
+            {
+                metadata.Position = offset;
+                data = metadata.ReadBytes(size.Value);
+                if (data.Length != size.Value)
+                    throw new EndOfStreamException("Truncated field RVA data.");
+                return true;
+            }
+            finally
+            {
+                metadata.Position = position;
+            }
+        }
+
         public bool TryGetDefaultValue(int typeIndex, int dataIndex, out object value)
         {
             var pointer = metadata.GetDefaultValueFromIndex(dataIndex);

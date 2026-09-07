@@ -163,6 +163,26 @@ namespace Il2CppDumper
                         var interfaceTypeRef = GetTypeReference(typeDefinition, interfaceType);
                         typeDefinition.Interfaces.Add(new InterfaceImplementation(interfaceTypeRef));
                     }
+
+                    if (!typeDefinition.IsAutoLayout)
+                    {
+                        var packing = (typeDef.bitfield >> 12) & 0xf;
+                        if (packing > 8)
+                            throw new InvalidDataException($"Invalid packing size for type {index}.");
+                        if (packing != 0)
+                            typeDefinition.PackingSize = (short)(1 << ((int)packing - 1));
+                        if (typeDef.IsValueType && typeDef.field_count == 0 && typeDef.genericContainerIndex < 0 &&
+                            (typeDef.bitfield & (1u << 11)) == 0)
+                        {
+                            var size = executor.GetFieldRvaSize(il2Cpp.types[typeDef.byvalTypeIndex]);
+                            if (size.HasValue)
+                            {
+                                typeDefinition.ClassSize = size.Value;
+                                if (typeDefinition.PackingSize < 0)
+                                    typeDefinition.PackingSize = 0;
+                            }
+                        }
+                    }
                 }
             }
             //处理field, method, property等等
@@ -195,7 +215,23 @@ namespace Il2CppDumper
                         }
 
                         //fieldDefault
-                        if (metadata.GetFieldDefaultValueFromIndex(i, out var fieldDefault) && fieldDefault.dataIndex != -1)
+                        if (fieldDefinition.HasFieldRVA)
+                        {
+                            if (executor.TryGetFieldRvaData(i, out var initialValue))
+                                fieldDefinition.InitialValue = initialValue;
+                            else
+                            {
+                                Console.WriteLine($"WARNING: Cannot restore field RVA data for {fieldDefinition.FullName}.");
+                                if (metadata.GetFieldDefaultValueFromIndex(i, out var rvaDefault) && rvaDefault.dataIndex >= 0)
+                                {
+                                    var customAttribute = new CustomAttribute(typeDefinition.Module.ImportReference(metadataOffsetAttribute));
+                                    var offset = (ulong)metadata.header.fieldAndParameterDefaultValueDataOffset + (uint)rvaDefault.dataIndex;
+                                    customAttribute.Fields.Add(new CustomAttributeNamedArgument("Offset", new CustomAttributeArgument(stringType, $"0x{offset:X}")));
+                                    fieldDefinition.CustomAttributes.Add(customAttribute);
+                                }
+                            }
+                        }
+                        else if (metadata.GetFieldDefaultValueFromIndex(i, out var fieldDefault) && fieldDefault.dataIndex != -1)
                         {
                             if (executor.TryGetDefaultValue(fieldDefault.typeIndex, fieldDefault.dataIndex, out var value))
                             {
@@ -215,6 +251,8 @@ namespace Il2CppDumper
                             var fieldOffset = il2Cpp.GetFieldOffsetFromIndex(index, i - typeDef.fieldStart, i, typeDefinition.IsValueType, fieldDefinition.IsStatic);
                             if (fieldOffset >= 0)
                             {
+                                if (typeDefinition.IsExplicitLayout && typeDefinition.IsValueType && !fieldDefinition.IsStatic)
+                                    fieldDefinition.Offset = checked((int)fieldOffset);
                                 var customAttribute = new CustomAttribute(typeDefinition.Module.ImportReference(fieldOffsetAttribute));
                                 var offset = new CustomAttributeNamedArgument("Offset", new CustomAttributeArgument(stringType, $"0x{fieldOffset:X}"));
                                 customAttribute.Fields.Add(offset);

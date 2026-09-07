@@ -13,6 +13,7 @@ Unity il2cpp reverse engineer
 * Supports legacy Unity 5.3+ and the Unity 6 metadata layouts listed below
 * Keeps the existing metadata 16–31 parsers and adds 35, 38, 39, 104–108 and 110, including the 106.1 binary variant. Restores variable-width indices, enum types, encoded attribute constructors, relocated generic/RGCTX tables and computed metadata tokens.
 * Restores assembly custom attributes (v21+), return-value custom attributes (v31+) and module custom attributes (v38+) when present in the metadata, in addition to type/member attributes.
+* Restores embedded field-RVA initializer bytes, opaque value-type storage sizes, declared packing and explicit value-type field offsets in DummyDll. Native analysis scripts also label discovered field-RVA references.
 * Supports generate IDA, Ghidra and Binary Ninja scripts to help them better analyze il2cpp files
 * Supports generate structures header file
 * Supports Android memory dumped `libil2cpp.so` file to bypass protection
@@ -24,7 +25,7 @@ End-to-end Windows PE samples have been checked for metadata 24.4 (binary 24.5),
 
 Versions 106/107 can represent two binary layouts. Their attribute constructor tags distinguish 106 from 106.1 automatically. If these tags are absent, set `ForceIl2CppVersion` and `ForceVersion` to the appropriate binary layout in `config.json`.
 
-Native `.h` generation for v35+ is still unsupported. Modern in-memory dumps and non-PE binaries have not yet received the same end-to-end validation.
+Native `.h` generation covers 35, 38, 39, 104, 105, 106, 106.1, 107, 108 and 110 alongside the existing older layouts. Core class, method and type layouts were compared with official Unity distribution headers for both 32-bit and 64-bit Windows ABIs, including debug and code-coverage variants. Modern in-memory dumps and non-PE binaries have not yet received the same end-to-end validation.
 
 ## Usage
 
@@ -68,6 +69,14 @@ such as assembly metadata, module annotations, readonly returns and return
 tuple element names. Legacy v21–27 attribute arguments still have the existing
 best-effort restoration limits; missing metadata is not inferred.
 
+Embedded field-RVA data is restored for fixed-width primitive fields and
+non-generic opaque value-type storage with a recoverable size. Byte ranges
+are checked against the metadata default-value section. Unsupported storage
+layouts produce a warning and retain their metadata-offset annotation;
+arbitrary static-constructor logic and runtime-computed values are not restored.
+This does not recreate original method bodies or guarantee that a decompiler
+will reconstruct the original high-level array declaration.
+
 With `DumpAttribute` enabled, `dump.cs` also includes these attributes using
 `assembly:`, `module:` and `return:` targets. Assembly/module groups are labelled
 with their source image because the dump combines multiple assemblies; it is
@@ -88,6 +97,20 @@ Use `ida_py3.py` or `ida_with_struct_py3.py` with Python 3. The latter uses the 
 #### il2cpp.h
 
 structure information header file
+
+Modern headers are generated for the input binary's pointer width. Set
+`IL2CPP_DEBUG` to `1` before importing a v104+ header if the player was built
+with that native runtime setting; set `IL2CPP_CODE_COVERAGE` to `1` for a v110
+player using native code coverage. Undefined macros select the normal layout.
+These build settings are not automatically detected from metadata and are
+not equivalent to merely attaching a debugger. Import using the matching ABI.
+`il2cpp_header_to_ghidra.py` detects the pointer width in modern headers;
+use `--bits 32` when converting an older 32-bit header without that marker.
+
+The headers retain unknown RGCTX slots instead of shifting subsequent entries,
+and preserve the byte size of one-byte-packed opaque initializer storage.
+Generated game-specific structures remain analysis aids, not a replacement
+for the original Unity headers or compilable original game source.
 
 #### ghidra.py
 

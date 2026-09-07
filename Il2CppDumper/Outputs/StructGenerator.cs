@@ -25,12 +25,12 @@ namespace Il2CppDumper
         private readonly List<ulong> genericClassList = new();
         private readonly StringBuilder arrayClassHeader = new();
         private readonly StringBuilder methodInfoHeader = new();
-        private static readonly HashSet<ulong> methodInfoCache = new();
+        private readonly HashSet<ulong> methodInfoCache = new();
         private static readonly HashSet<string> keyword = new(StringComparer.Ordinal)
         { "klass", "monitor", "register", "_cs", "auto", "friend", "template", "flat", "default", "_ds", "interrupt",
             "unsigned", "signed", "asm", "if", "case", "break", "continue", "do", "new", "_", "short", "union", "class", "namespace"};
         private static readonly HashSet<string> specialKeywords = new(StringComparer.Ordinal)
-        { "inline", "near", "far" };
+        { "inline", "near", "far", "_int8", "_int16", "_int32", "_int64", "__int8", "__int16", "__int32", "__int64" };
 
         public StructGenerator(Il2CppExecutor il2CppExecutor)
         {
@@ -295,6 +295,10 @@ namespace Il2CppDumper
                                 AddMetadataUsageFieldInfo(json, decodedIndex, va);
                             }
                             break;
+                        case Il2CppMetadataUsage.kIl2CppMetadataUsageFieldRva:
+                            if (decodedIndex < metadata.fieldRefs.Length)
+                                AddMetadataUsageFieldRva(json, decodedIndex, va);
+                            break;
                         case Il2CppMetadataUsage.kIl2CppMetadataUsageStringLiteral:
                             if (decodedIndex < metadata.stringLiterals.Length)
                             {
@@ -387,6 +391,18 @@ namespace Il2CppDumper
                 case 31:
                     sb.Append(HeaderConstants.HeaderV29);
                     break;
+                case 35:
+                case 38:
+                case 39:
+                case 104:
+                case 105:
+                case 106:
+                case 106.1:
+                case 107:
+                case 108:
+                case 110:
+                    sb.Append(HeaderConstants.GetModernHeader(il2Cpp.Version, il2Cpp.Is32Bit));
+                    break;
                 default:
                     Console.WriteLine($"WARNING: This il2cpp version [{il2Cpp.Version}] does not support generating .h files");
                     return;
@@ -415,7 +431,7 @@ namespace Il2CppDumper
                     var rawUsage = Metadata.GetEncodedIndexType(encodedToken);
                     var usage = il2Cpp.GetMetadataUsageType(encodedToken);
                     var decodedIndex = metadata.GetDecodedMethodIndex(encodedToken);
-                    if (usage == 0 || usage > 6 ||
+                    if (usage == 0 || usage > 7 ||
                         metadataValue != ((rawUsage << 29) | (decodedIndex << 1)) + 1)
                         continue;
                     var va = il2Cpp.MapRTVA(addr);
@@ -531,6 +547,28 @@ namespace Il2CppDumper
             scriptMetadata.Name = "Field$" + fieldName;
         }
 
+        private void AddMetadataUsageFieldRva(ScriptJson json, uint index, ulong address)
+        {
+            var reference = metadata.fieldRefs[index];
+            if (reference.typeIndex < 0 || reference.typeIndex >= il2Cpp.types.Length)
+                return;
+            var type = il2Cpp.types[reference.typeIndex];
+            var definition = GetTypeDefinition(type);
+            if (reference.fieldIndex < 0 || reference.fieldIndex >= definition.field_count)
+                return;
+            var fieldIndex = definition.fieldStart + reference.fieldIndex;
+            var field = metadata.fieldDefs[fieldIndex];
+            if ((il2Cpp.types[field.typeIndex].attrs & 0x110) != 0x110 ||
+                !metadata.GetFieldDefaultValueFromIndex(fieldIndex, out var value) || value.dataIndex < 0)
+                return;
+            json.ScriptMetadata.Add(new ScriptMetadata
+            {
+                Address = il2Cpp.GetRVA(address),
+                Name = "FieldRva$" + executor.GetTypeName(type, true, false) + "." + metadata.GetStringFromIndex(field.nameIndex),
+                Signature = "const uint8_t*"
+            });
+        }
+
         private void AddMetadataUsageStringLiteral(ScriptJson json, uint index, ulong address)
         {
             var scriptString = new ScriptString();
@@ -559,6 +597,7 @@ namespace Il2CppDumper
 
         private static string FixName(string str)
         {
+            str = Regex.Replace(str, "[^a-zA-Z0-9_]", "_");
             if (keyword.Contains(str))
             {
                 str = "_" + str;
@@ -574,7 +613,7 @@ namespace Il2CppDumper
             }
             else
             {
-                return Regex.Replace(str, "[^a-zA-Z0-9_]", "_");
+                return str;
             }
         }
 
@@ -739,6 +778,8 @@ namespace Il2CppDumper
             structInfoList.Add(structInfo);
             structInfo.TypeName = structNameDic[typeDef];
             structInfo.IsValueType = typeDef.IsValueType;
+            if (typeDef.IsValueType && typeDef.field_count == 0 && ((typeDef.bitfield >> 6) & 0xf) == 1)
+                structInfo.StorageSize = executor.GetFieldRvaSize(il2Cpp.types[typeDef.byvalTypeIndex]) ?? 0;
             AddParents(typeDef, structInfo);
             AddFields(typeDef, structInfo, null);
             AddVTableMethod(structInfo, typeDef);
@@ -1041,6 +1082,8 @@ namespace Il2CppDumper
                     sb.Append($"struct {info.TypeName}_Fields {{\n");
                 }
             }
+            if (info.StorageSize > 0)
+                sb.Append($"\tuint8_t __data[{info.StorageSize}];\n");
             foreach (var field in info.Fields)
             {
                 if (field.IsValueType)
@@ -1076,6 +1119,9 @@ namespace Il2CppDumper
                         case Il2CppRGCTXDataType.IL2CPP_RGCTX_DATA_METHOD:
                             sb.Append($"\tMethodInfo* _{i}_{rgctx.MethodName};\n");
                             break;
+                        default:
+                            sb.Append($"\tIl2CppRGCTXData _{i};\n");
+                            break;
                     }
                 }
                 sb.Append("};\n");
@@ -1101,7 +1147,7 @@ namespace Il2CppDumper
                 sb.Append("};\n");
             }
 
-            sb.Append($"struct {info.TypeName}_c {{\n");
+            sb.Append(il2Cpp.Version >= 35 ? $"struct __declspec(align(8)) {info.TypeName}_c {{\n" : $"struct {info.TypeName}_c {{\n");
             sb.Append($"\tIl2CppClass_1 _1;\n");
             if (info.StaticFields.Count > 0)
             {
@@ -1391,6 +1437,9 @@ namespace Il2CppDumper
                         case Il2CppRGCTXDataType.IL2CPP_RGCTX_DATA_METHOD:
                             methodInfoHeader.Append($"\tMethodInfo* _{i}_{rgctx.MethodName};\n");
                             break;
+                        default:
+                            methodInfoHeader.Append($"\tIl2CppRGCTXData _{i};\n");
+                            break;
                     }
                 }
                 methodInfoHeader.Append("};\n");
@@ -1455,6 +1504,8 @@ namespace Il2CppDumper
             methodInfoHeader.Append($"\tuint16_t slot;\n");
             methodInfoHeader.Append($"\tuint8_t parameters_count;\n");
             methodInfoHeader.Append($"\tuint8_t bitflags;\n");
+            if (il2Cpp.Version >= 110)
+                methodInfoHeader.Append(HeaderConstants.MethodInfoCoverageFields);
             methodInfoHeader.Append($"}};\n");
         }
     }

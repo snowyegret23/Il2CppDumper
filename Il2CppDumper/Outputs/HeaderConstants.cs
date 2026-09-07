@@ -2,6 +2,47 @@
 {
     public static class HeaderConstants
     {
+        public const string MethodInfoCoverageFields =
+            "#if IL2CPP_CODE_COVERAGE\n    uint64_t* sequencePointHits;\n    const void* sequencePoints;\n    int32_t sequencePointCount;\n#endif\n";
+
+        public static string GetModernHeader(double version, bool is32Bit)
+        {
+            if (version != 35 && version != 38 && version != 39 && version != 104 && version != 105 &&
+                version != 106 && version != 106.1 && version != 107 && version != 108 && version != 110)
+                throw new System.NotSupportedException($"No native header layout for version {version}.");
+
+            var header = HeaderV29.Replace("\r\n", "\n")
+                .Replace("uint32_t initializationExceptionGCHandle;", "void* initializationExceptionGCHandle;")
+                .Replace("uint32_t cctor_finished;", "uint32_t cctor_finished_or_no_cctor;")
+                .Replace("uint32_t instance_size;", "uint32_t instance_size;\n    uint32_t stack_slot_size;")
+                .Replace("    uint8_t naturalAligment;\n", "")
+                .Replace("struct Il2CppClass\n", "struct __declspec(align(8)) Il2CppClass\n");
+            if (version >= 104)
+            {
+                header = header.Replace("    Il2CppType byval_arg;", "#if IL2CPP_DEBUG\n    char* debug_name;\n#endif\n    Il2CppType byval_arg;")
+                    .Replace("    void* events;\n", "")
+                    .Replace("    void* properties;\n", "")
+                    .Replace("    Il2CppClass** nestedTypes;\n", "")
+                    .Replace("    Il2CppClass** typeHierarchy;", "    Il2CppClass** typeHierarchy;\n    const void* events;\n    const void* properties;\n    const void* nestedTypes;");
+                if (is32Bit)
+                {
+                    // Splitting Il2CppClass must not change the absolute 8-byte alignment of cctor_thread.
+                    var condition = version >= 108 ? "!IL2CPP_DEBUG" : "IL2CPP_DEBUG";
+                    header = header.Replace("    size_t cctor_thread;",
+                        $"#if {condition}\n    uint32_t cctor_thread_padding;\n#endif\n    size_t cctor_thread;");
+                }
+            }
+            if (version >= 108)
+            {
+                header = "struct Il2CppRuntimeInterfaceData\n{\n    Il2CppClass* interfaceType;\n    int32_t offset;\n    int32_t depth;\n};\n\n" +
+                    header.Replace("    Il2CppClass** implementedInterfaces;\n    Il2CppRuntimeInterfaceOffsetPair* interfaceOffsets;",
+                        "    Il2CppRuntimeInterfaceData* interfaces;");
+            }
+            if (version >= 110)
+                header = header.Replace("    uint8_t bitflags;\n};", "    uint8_t bitflags;\n" + MethodInfoCoverageFields + "};");
+            return $"// Native layout: metadata {version}, {(is32Bit ? 32 : 64)}-bit. Match IL2CPP_DEBUG and IL2CPP_CODE_COVERAGE to the player.\n" + header;
+        }
+
         public readonly static string GenericHeader =
 @"typedef void(*Il2CppMethodPointer)();
 
