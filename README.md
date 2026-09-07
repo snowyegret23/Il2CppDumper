@@ -4,6 +4,8 @@
 
 中文说明请戳[这里](README.zh-CN.md)
 
+한국어 설명은 [여기](README.ko-KR.md)를 참고하세요.
+
 Unity il2cpp reverse engineer
 
 ## Features
@@ -43,6 +45,30 @@ Create the output directory before running the command. Optional flags can appea
 
 * `--strings-only`: write only `stringliteral.json`, skipping `dump.cs`, `script.json`, headers and DummyDll generation. Existing unrelated output files are left untouched. Binary/metadata initialization is still required; the file contains discovered string references and their RVAs, not every localization asset or unused metadata string. Addressed string extraction is unavailable for v16.
 * `--restore-explicit-interfaces`: add unambiguous explicit interface mappings to DummyDll. This conservative, opt-in reconstruction requires a directly implemented non-generic interface and matching method name, flags and scoped signature. Generic methods/interfaces, inherited-only interfaces and ambiguous matches are left unchanged.
+
+### Ghidra quick start
+
+Use the native binary passed to Il2CppDumper and its generated `il2cpp.h` and `script.json`. For Windows, import `GameAssembly.dll` or the corresponding `*Assembly.dll`; for Android, import `libil2cpp.so`. Do not import a DLL from `DummyDll` as the native analysis target.
+
+1. Create a Ghidra project with `File → New Project → Non-Shared Project`, then use `File → Import File` to import the native binary. Open it in CodeBrowser and choose `No` at the initial Auto Analysis prompt.
+
+2. Place `il2cpp_header_to_ghidra.py` beside `il2cpp.h`. In that directory, run the converter with Python 3 outside Ghidra:
+
+   ```text
+   python -X utf8 il2cpp_header_to_ghidra.py
+   ```
+
+   This creates `il2cpp_ghidra.h`. Modern headers provide their pointer width automatically; add `--bits 32` for an older 32-bit header without an architecture marker.
+
+3. In CodeBrowser, open `File → Parse C Source...`. Copy a parse profile matching the target architecture, replace its source-file list with `il2cpp_ghidra.h`, and remove unrelated include paths and parse options. Click `Parse to Program` to register the types in the current program.
+
+4. Open `Window → Script Manager`. Use its script-directory manager to add the folder containing the Il2CppDumper Ghidra scripts, then refresh the list. For PyGhidra, start Ghidra in [PyGhidra mode](https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Features/PyGhidra/src/main/py/README.md) and add `#@runtime PyGhidra` to the header comments of your local `ghidra_with_struct.py` copy. Jython users can run the bundled script with Jython instead.
+
+5. Run `ghidra_with_struct.py` and select `script.json` in the file dialog. This applies names, function signatures and metadata types using the types imported in step 3. There is no need to run `ghidra.py` separately.
+
+6. Run `Analysis → Auto Analyze...`. Start with the target's default analysis options and leave `Decompiler Parameter ID` unchecked for this initial pass. When analysis finishes, select a function and open `Window → Decompiler` to view the native pseudocode.
+
+If Auto Analysis has already run, continue from the header conversion step. Import the header types before running `ghidra_with_struct.py`.
 
 ### Automated releases
 
