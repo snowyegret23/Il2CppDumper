@@ -21,6 +21,7 @@ namespace Il2CppDumper
         public uint propertiesOffset; // Il2CppPropertyDefinition
         public int propertiesSize;
         [Version(Min = 38)] public int propertiesCount;
+        [Version(Min = 111)] public Il2CppMetadataSection methodSignatures;
         public uint methodsOffset; // Il2CppMethodDefinition
         public int methodsSize;
         [Version(Min = 38)] public int methodsCount;
@@ -322,9 +323,9 @@ namespace Il2CppDumper
         public uint nameIndex;
         [VariableIndex(VariableIndexKind.TypeDefinition)]
         public int declaringType;
-        [VariableIndex(VariableIndexKind.Type)]
+        [Version(Max = 110), VariableIndex(VariableIndexKind.Type)]
         public int returnType;
-        [Version(Min = 31)]
+        [Version(Min = 31, Max = 110)]
         public int returnParameterToken;
         [VariableIndex(VariableIndexKind.Parameter)]
         public int parameterStart;
@@ -346,16 +347,17 @@ namespace Il2CppDumper
         public ushort flags;
         public ushort iflags;
         public ushort slot;
-        public ushort parameterCount;
+        [Version(Max = 110)] public ushort parameterCount;
+        [Version(Min = 111)] public int signatureOffset;
     }
 
     public class Il2CppParameterDefinition
     {
         public uint nameIndex;
-        public uint token;
+        [Version(Max = 110)] public uint token;
         [Version(Max = 24)]
         public int customAttributeIndex;
-        [VariableIndex(VariableIndexKind.Type)]
+        [Version(Max = 110), VariableIndex(VariableIndexKind.Type)]
         public int typeIndex;
     }
 
@@ -482,6 +484,9 @@ namespace Il2CppDumper
         IL2CPP_RGCTX_DATA_METHOD,
         IL2CPP_RGCTX_DATA_ARRAY,
         IL2CPP_RGCTX_DATA_CONSTRAINED,
+        IL2CPP_RGCTX_DATA_CONSTRAINED_CALL_METHOD,
+        IL2CPP_RGCTX_DATA_FIELD_OFFSET_TYPE,
+        IL2CPP_RGCTX_DATA_FIELD_OFFSET_FIELD,
     }
 
     public class Il2CppRGCTXDefinitionData

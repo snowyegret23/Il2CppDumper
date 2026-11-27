@@ -1,0 +1,14 @@
+using System;
+public static class Example
+{
+    [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.ReturnValue)]
+    public sealed class MarkerAttribute : Attribute { public MarkerAttribute(string value) {} }
+
+    [return: Marker("out")]
+    public static int ExampleMethod([Marker("in")] int a, string b, int c = 42)
+    {
+        return a + c + b.Length;
+    }
+
+    public static void Main() => _ = ExampleMethod(1, "test");
+}

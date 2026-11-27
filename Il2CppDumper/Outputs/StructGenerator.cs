@@ -401,6 +401,7 @@ namespace Il2CppDumper
                 case 107:
                 case 108:
                 case 110:
+                case 111:
                     sb.Append(HeaderConstants.GetModernHeader(il2Cpp.Version, il2Cpp.Is32Bit));
                     break;
                 default:
@@ -895,7 +896,7 @@ namespace Il2CppDumper
             var collection = executor.GetRGCTXDefinition(imageName, typeDef);
             if (collection != null)
             {
-                foreach (var definitionData in collection)
+                foreach (var definitionData in EnumerateRuntimeRgctx(il2Cpp.Version, collection))
                 {
                     var structRGCTXInfo = new StructRGCTXInfo();
                     structInfo.RGCTXs.Add(structRGCTXInfo);
@@ -935,13 +936,37 @@ namespace Il2CppDumper
             }
         }
 
+        private static IEnumerable<Il2CppRGCTXDefinition> EnumerateRuntimeRgctx(double version, Il2CppRGCTXDefinition[] collection)
+        {
+            for (var index = 0; index < collection.Length; index++)
+            {
+                var entry = collection[index];
+                // In v111 the runtime emits a single slot for each two-row definition.
+                if (version >= 111)
+                {
+                    var secondary = entry.type switch
+                    {
+                        Il2CppRGCTXDataType.IL2CPP_RGCTX_DATA_CONSTRAINED => Il2CppRGCTXDataType.IL2CPP_RGCTX_DATA_CONSTRAINED_CALL_METHOD,
+                        Il2CppRGCTXDataType.IL2CPP_RGCTX_DATA_FIELD_OFFSET_TYPE => Il2CppRGCTXDataType.IL2CPP_RGCTX_DATA_FIELD_OFFSET_FIELD,
+                        Il2CppRGCTXDataType.IL2CPP_RGCTX_DATA_CONSTRAINED_CALL_METHOD or Il2CppRGCTXDataType.IL2CPP_RGCTX_DATA_FIELD_OFFSET_FIELD =>
+                            throw new InvalidDataException("Unexpected secondary runtime RGCTX entry."),
+                        _ => Il2CppRGCTXDataType.IL2CPP_RGCTX_DATA_INVALID
+                    };
+                    if (secondary != Il2CppRGCTXDataType.IL2CPP_RGCTX_DATA_INVALID &&
+                        (++index >= collection.Length || collection[index].type != secondary))
+                        throw new InvalidDataException("Missing secondary runtime RGCTX entry.");
+                }
+                yield return entry;
+            }
+        }
+
         private List<StructRGCTXInfo> GenerateRGCTX(string imageName, Il2CppMethodDefinition methodDef)
         {
             var rgctxs = new List<StructRGCTXInfo>();
             var collection = executor.GetRGCTXDefinition(imageName, methodDef);
             if (collection != null)
             {
-                foreach (var definitionData in collection)
+                foreach (var definitionData in EnumerateRuntimeRgctx(il2Cpp.Version, collection))
                 {
                     var structRGCTXInfo = new StructRGCTXInfo();
                     rgctxs.Add(structRGCTXInfo);

@@ -60,7 +60,7 @@ namespace Il2CppDumper
                 throw new InvalidDataException("ERROR: Metadata file supplied is not valid metadata file.");
             }
             if (version < 16 || (version > 31 && version != 35 && version != 38 && version != 39 &&
-                (version < 104 || version > 108) && version != 110))
+                (version < 104 || version > 108) && version != 110 && version != 111))
             {
                 throw new NotSupportedException($"ERROR: Metadata file supplied is not a supported version[{version}].");
             }
@@ -107,6 +107,8 @@ namespace Il2CppDumper
             RestoreEnumTypes();
             methodDefs = ReadMetadataClassArray<Il2CppMethodDefinition>(header.methodsOffset, header.methodsSize, header.methodsCount);
             parameterDefs = ReadMetadataClassArray<Il2CppParameterDefinition>(header.parametersOffset, header.parametersSize, header.parametersCount);
+            if (Version >= 111)
+                RestoreMethodSignatures();
             fieldDefs = ReadMetadataClassArray<Il2CppFieldDefinition>(header.fieldsOffset, header.fieldsSize, header.fieldsCount);
             var fieldDefaultValues = ReadMetadataClassArray<Il2CppFieldDefaultValue>(header.fieldDefaultValuesOffset, header.fieldDefaultValuesSize, header.fieldDefaultValuesCount);
             var parameterDefaultValues = ReadMetadataClassArray<Il2CppParameterDefaultValue>(header.parameterDefaultValuesOffset, header.parameterDefaultValuesSize, header.parameterDefaultValuesCount);
@@ -204,7 +206,10 @@ namespace Il2CppDumper
 
             int? typeWidth = null;
             InferTypeWidth(header.interfaceOffsetsSize, header.interfaceOffsetsCount, 4);
-            InferTypeWidth(header.parametersSize, header.parametersCount, 8);
+            if (Version < 111)
+                InferTypeWidth(header.parametersSize, header.parametersCount, 8);
+            else
+                InferTypeWidth(header.interfacesSize, header.interfacesCount, 0);
             InferTypeWidth(header.fieldsSize, header.fieldsCount, Version >= 110 ? 4 : 8);
             SetIndexWidth(VariableIndexKind.Type, typeWidth ?? 4);
 
@@ -374,6 +379,75 @@ namespace Il2CppDumper
                     return checked(info.generatedMethodStart + indexInType - ordinaryCount);
             }
             return checked(type.methodStart + indexInType);
+        }
+
+        // v111 serializes each signature in a blob shared by methods: a TypeIndex,
+        // a Unity-compressed parameter count, then one TypeIndex per parameter.
+        private void RestoreMethodSignatures()
+        {
+            const int paramDefToken = 0x08000000;
+            const int lastTokenRow = 0x00FFFFFF;
+            const ushort hasReturnParameter = 0x4000;
+            const ushort isUnmanagedCallersOnly = 0x8000;
+            var signatures = header.methodSignatures;
+            if (signatures.size < 0 || (ulong)signatures.offset + (ulong)signatures.size > Length)
+                throw new InvalidDataException("Method signature section is outside the metadata file.");
+            var end = (ulong)signatures.offset + (ulong)signatures.size;
+            var typeWidth = (ulong)GetIndexWidth(VariableIndexKind.Type);
+            foreach (var method in methodDefs)
+            {
+                if (method.signatureOffset < 0 || method.signatureOffset >= signatures.size)
+                    throw new InvalidDataException("Method signature offset is outside its section.");
+                Position = (ulong)signatures.offset + (ulong)method.signatureOffset;
+                if (end - Position <= typeWidth)
+                    throw new InvalidDataException("Truncated method signature.");
+                method.returnType = ReadIndex(VariableIndexKind.Type);
+                var count = ReadSignatureParameterCount(end);
+                if (method.returnType < 0 || count > ushort.MaxValue || (ulong)count * typeWidth > end - Position)
+                    throw new InvalidDataException("Invalid method signature type or parameter count.");
+                var pastLastParameter = (long)method.parameterStart + count;
+                if (count != 0 && (method.parameterStart < 0 || pastLastParameter > parameterDefs.Length ||
+                    pastLastParameter > lastTokenRow))
+                    throw new InvalidDataException("Method signature parameters are outside the parameter table.");
+                if ((method.iflags & hasReturnParameter) != 0)
+                {
+                    // The return parameter precedes the argument rows. Its one-based
+                    // token row is therefore parameterStart, not parameterStart + 1.
+                    if (method.parameterStart <= 0 || method.parameterStart > parameterDefs.Length ||
+                        method.parameterStart > lastTokenRow)
+                        throw new InvalidDataException("Method return parameter is outside the parameter table.");
+                    method.returnParameterToken = paramDefToken | method.parameterStart;
+                }
+                method.iflags &= unchecked((ushort)~(hasReturnParameter | isUnmanagedCallersOnly));
+                method.parameterCount = (ushort)count;
+                for (var i = 0; i < method.parameterCount; i++)
+                {
+                    var type = ReadIndex(VariableIndexKind.Type);
+                    if (type < 0)
+                        throw new InvalidDataException("Invalid parameter type in method signature.");
+                    var parameterIndex = method.parameterStart + i;
+                    parameterDefs[parameterIndex].typeIndex = type;
+                    parameterDefs[parameterIndex].token = (uint)(paramDefToken | (parameterIndex + 1));
+                }
+            }
+        }
+
+        private uint ReadSignatureParameterCount(ulong end)
+        {
+            var start = Position;
+            var prefix = ReadByte();
+            var width = prefix switch
+            {
+                < 0x80 => 1,
+                < 0xC0 => 2,
+                < 0xE0 => 4,
+                0xF0 => 5,
+                _ => throw new InvalidDataException("Invalid compressed method signature parameter count.")
+            };
+            if ((ulong)width > end - start)
+                throw new InvalidDataException("Truncated compressed method signature parameter count.");
+            Position = start;
+            return ReadCompressedUInt32();
         }
 
         private void RestoreMetadataTokens()

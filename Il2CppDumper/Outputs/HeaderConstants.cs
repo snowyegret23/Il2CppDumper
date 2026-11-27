@@ -8,7 +8,7 @@
         public static string GetModernHeader(double version, bool is32Bit)
         {
             if (version != 35 && version != 38 && version != 39 && version != 104 && version != 105 &&
-                version != 106 && version != 106.1 && version != 107 && version != 108 && version != 110)
+                version != 106 && version != 106.1 && version != 107 && version != 108 && version != 110 && version != 111)
                 throw new System.NotSupportedException($"No native header layout for version {version}.");
 
             var header = HeaderV29.Replace("\r\n", "\n")
@@ -40,6 +40,9 @@
             }
             if (version >= 110)
                 header = header.Replace("    uint8_t bitflags;\n};", "    uint8_t bitflags;\n" + MethodInfoCoverageFields + "};");
+            if (version >= 111)
+                header = header.Replace("    Il2CppRGCTXData* rgctx_data;",
+                    "    union { Il2CppRGCTXData* rgctx_data; const void* genericParameterFlags; };");
             return $"// Native layout: metadata {version}, {(is32Bit ? 32 : 64)}-bit. Match IL2CPP_DEBUG and IL2CPP_CODE_COVERAGE to the player.\n" + header;
         }
 

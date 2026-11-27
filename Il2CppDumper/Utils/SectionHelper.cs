@@ -347,7 +347,8 @@ namespace Il2CppDumper
             return pointers.All(x => bss.Any(y => x >= y.address && x <= y.addressEnd));
         }
 
-        private static readonly byte[] featureBytes = { 0x6D, 0x73, 0x63, 0x6F, 0x72, 0x6C, 0x69, 0x62, 0x2E, 0x64, 0x6C, 0x6C, 0x00 }; //mscorlib.dll
+        private static readonly byte[] mscorlibModuleName = "mscorlib.dll\0"u8.ToArray();
+        private static readonly byte[] coreLibModuleName = "System.Private.CoreLib.dll\0"u8.ToArray();
 
         private ulong FindCodeRegistrationData()
         {
@@ -365,7 +366,10 @@ namespace Il2CppDumper
             {
                 il2Cpp.Position = sec.offset;
                 var buff = il2Cpp.ReadBytes((int)(sec.offsetEnd - sec.offset));
-                foreach (var index in buff.Search(featureBytes))
+                var moduleNames = buff.Search(mscorlibModuleName);
+                if (il2Cpp.Version >= 111)
+                    moduleNames = moduleNames.Concat(buff.Search(coreLibModuleName));
+                foreach (var index in moduleNames)
                 {
                     var dllva = (ulong)index + sec.address;
                     foreach (var refva in FindReference(dllva))
